@@ -34,6 +34,8 @@ struct f2fs_checkpoint *cp;
 #define next_zone(cur)		(c.cur_seg[cur] + c.segs_per_zone)
 #define last_zone(cur)		((cur - 1) * c.segs_per_zone)
 #define last_section(cur)	(cur + (c.secs_per_zone - 1) * c.segs_per_sec)
+#define prev_gc_zone(cur)		(c.gc_cur_seg[cur] - c.segs_per_zone)
+#define next_gc_zone(cur)		(c.gc_cur_seg[cur] + c.segs_per_zone)
 
 static unsigned int quotatype_bits = 0;
 
@@ -165,12 +167,27 @@ static void verify_cur_segs(void)
 		}
 	}
 
+	if (!reorder) {
+		for (i = 0; i < NR_CURSEG_TYPE; i++) {
+			for (j = 0; j < NR_CURSEG_TYPE; j++) {
+				if (c.cur_seg[i] == c.gc_cur_seg[j]) {
+					reorder = 1;
+					break;
+				}
+			}
+		}
+	}
+
 	if (!reorder)
 		return;
 
 	c.cur_seg[0] = 0;
 	for (i = 1; i < NR_CURSEG_TYPE; i++)
 		c.cur_seg[i] = next_zone(i - 1);
+
+	c.gc_cur_seg[0] = next_zone(i);
+	for (i = 1; i < NR_CURSEG_TYPE; i++)
+		c.gc_cur_seg[i] = next_gc_zone(i - 1);
 }
 
 static int f2fs_prepare_super_block(void)
@@ -470,6 +487,14 @@ static int f2fs_prepare_super_block(void)
 		c.cur_seg[CURSEG_HOT_DATA] = prev_zone(CURSEG_COLD_NODE);
 		c.cur_seg[CURSEG_COLD_DATA] = 0;
 		c.cur_seg[CURSEG_WARM_DATA] = next_zone(CURSEG_COLD_DATA);
+
+		c.gc_cur_seg[CURSEG_HOT_NODE] = prev_zone(CURSEG_HOT_DATA);
+		c.gc_cur_seg[CURSEG_WARM_NODE] = prev_gc_zone(CURSEG_HOT_NODE);
+		c.gc_cur_seg[CURSEG_COLD_NODE] = prev_gc_zone(CURSEG_WARM_NODE);
+		c.gc_cur_seg[CURSEG_HOT_DATA] = prev_gc_zone(CURSEG_COLD_NODE);
+		c.gc_cur_seg[CURSEG_COLD_DATA] = next_zone(CURSEG_WARM_DATA);
+		c.gc_cur_seg[CURSEG_WARM_DATA] = next_gc_zone(CURSEG_COLD_DATA);
+
 	} else {
 		c.cur_seg[CURSEG_HOT_NODE] = 0;
 		c.cur_seg[CURSEG_WARM_NODE] = next_zone(CURSEG_HOT_NODE);
@@ -481,6 +506,13 @@ static int f2fs_prepare_super_block(void)
 		c.cur_seg[CURSEG_WARM_DATA] =
 				max(last_zone((total_zones >> 1)),
 					next_zone(CURSEG_COLD_DATA));
+
+		c.gc_cur_seg[CURSEG_HOT_NODE] = next_zone(CURSEG_WARM_DATA);
+		c.gc_cur_seg[CURSEG_WARM_NODE] = next_gc_zone(CURSEG_HOT_NODE);
+		c.gc_cur_seg[CURSEG_COLD_NODE] = next_gc_zone(CURSEG_WARM_NODE);
+		c.gc_cur_seg[CURSEG_HOT_DATA] = next_gc_zone(CURSEG_COLD_NODE);
+		c.gc_cur_seg[CURSEG_COLD_DATA] = next_gc_zone(CURSEG_HOT_DATA);
+		c.gc_cur_seg[CURSEG_WARM_DATA] = next_gc_zone(CURSEG_COLD_DATA);
 	}
 
 	/* if there is redundancy, reassign it */
@@ -641,9 +673,20 @@ static int f2fs_write_check_point_pack(void)
 	set_cp(cur_data_segno[0], c.cur_seg[CURSEG_HOT_DATA]);
 	set_cp(cur_data_segno[1], c.cur_seg[CURSEG_WARM_DATA]);
 	set_cp(cur_data_segno[2], c.cur_seg[CURSEG_COLD_DATA]);
+
+	set_cp(cur_gc_node_segno[0], c.gc_cur_seg[CURSEG_HOT_NODE]);
+	set_cp(cur_gc_node_segno[1], c.gc_cur_seg[CURSEG_WARM_NODE]);
+	set_cp(cur_gc_node_segno[2], c.gc_cur_seg[CURSEG_COLD_NODE]);
+	set_cp(cur_gc_data_segno[0], c.gc_cur_seg[CURSEG_HOT_DATA]);
+	set_cp(cur_gc_data_segno[1], c.gc_cur_seg[CURSEG_WARM_DATA]);
+	set_cp(cur_gc_data_segno[2], c.gc_cur_seg[CURSEG_COLD_DATA]);
+
 	for (i = 3; i < MAX_ACTIVE_NODE_LOGS; i++) {
 		set_cp(cur_node_segno[i], 0xffffffff);
 		set_cp(cur_data_segno[i], 0xffffffff);
+
+		set_cp(cur_gc_node_segno[i], 0xffffffff);
+		set_cp(cur_gc_data_segno[i], 0xffffffff);
 	}
 
 	set_cp(cur_node_blkoff[0], 1 + c.quota_inum + c.lpf_inum);
@@ -663,8 +706,8 @@ static int f2fs_write_check_point_pack(void)
 					c.reserved_segments);
 
 	/* main segments - reserved segments - (node + data segments) */
-	set_cp(free_segment_count, get_sb(segment_count_main) - 6);
-	set_cp(user_block_count, ((get_cp(free_segment_count) + 6 -
+	set_cp(free_segment_count, get_sb(segment_count_main) - 12); /* Adding 6 more for GC node segments*/
+	set_cp(user_block_count, ((get_cp(free_segment_count) + 12 -
 			get_cp(overprov_segment_count)) * c.blks_per_seg));
 	/* cp page (2), data summaries (1), node summaries (3) */
 	set_cp(cp_pack_total_block_count, 6 + get_sb(cp_payload));
@@ -780,7 +823,7 @@ static int f2fs_write_check_point_pack(void)
 
 	memset(sum, 0, sizeof(struct f2fs_summary_block));
 	/* inode sit for root */
-	journal->n_sits = cpu_to_le16(6);
+	journal->n_sits = cpu_to_le16(12); /* adding 6 for the GC cur segs */
 	journal->sit_j.entries[0].segno = cp->cur_node_segno[0];
 	journal->sit_j.entries[0].se.vblocks =
 				cpu_to_le16((CURSEG_HOT_NODE << 10) |
@@ -794,27 +837,56 @@ static int f2fs_write_check_point_pack(void)
 	journal->sit_j.entries[1].segno = cp->cur_node_segno[1];
 	journal->sit_j.entries[1].se.vblocks =
 				cpu_to_le16((CURSEG_WARM_NODE << 10));
+
 	journal->sit_j.entries[2].segno = cp->cur_node_segno[2];
 	journal->sit_j.entries[2].se.vblocks =
 				cpu_to_le16((CURSEG_COLD_NODE << 10));
 
-	/* data sit for root */
-	journal->sit_j.entries[3].segno = cp->cur_data_segno[0];
+	/* Add sit entries for the GC cur data segs */
+	journal->sit_j.entries[3].segno = cp->cur_gc_node_segno[0];
 	journal->sit_j.entries[3].se.vblocks =
+				cpu_to_le16((CURSEG_HOT_NODE << 10));
+
+	journal->sit_j.entries[4].segno = cp->cur_gc_node_segno[1];
+	journal->sit_j.entries[4].se.vblocks =
+				cpu_to_le16((CURSEG_WARM_NODE << 10));
+
+	journal->sit_j.entries[5].segno = cp->cur_gc_node_segno[2];
+	journal->sit_j.entries[5].se.vblocks =
+				cpu_to_le16((CURSEG_COLD_NODE << 10));
+
+	/* data sit for root */
+	journal->sit_j.entries[6].segno = cp->cur_data_segno[0];
+	journal->sit_j.entries[6].se.vblocks =
 				cpu_to_le16((CURSEG_HOT_DATA << 10) |
 						(1 + c.quota_dnum + c.lpf_dnum));
-	f2fs_set_bit(0, (char *)journal->sit_j.entries[3].se.valid_map);
+	f2fs_set_bit(0, (char *)journal->sit_j.entries[6].se.valid_map);
 	for (i = 1; i <= c.quota_dnum; i++)
-		f2fs_set_bit(i, (char *)journal->sit_j.entries[3].se.valid_map);
+		f2fs_set_bit(i, (char *)journal->sit_j.entries[6].se.valid_map);
 	if (c.lpf_dnum)
-		f2fs_set_bit(i, (char *)journal->sit_j.entries[3].se.valid_map);
+		f2fs_set_bit(i, (char *)journal->sit_j.entries[6].se.valid_map);
 
-	journal->sit_j.entries[4].segno = cp->cur_data_segno[1];
-	journal->sit_j.entries[4].se.vblocks =
+	journal->sit_j.entries[7].segno = cp->cur_data_segno[1];
+	journal->sit_j.entries[7].se.vblocks =
 				cpu_to_le16((CURSEG_WARM_DATA << 10));
-	journal->sit_j.entries[5].segno = cp->cur_data_segno[2];
-	journal->sit_j.entries[5].se.vblocks =
+
+	journal->sit_j.entries[8].segno = cp->cur_data_segno[2];
+	journal->sit_j.entries[8].se.vblocks =
 				cpu_to_le16((CURSEG_COLD_DATA << 10));
+
+	/* Add sit entries for the GC cur node segs */
+	journal->sit_j.entries[9].segno = cp->cur_gc_data_segno[0];
+	journal->sit_j.entries[9].se.vblocks =
+				cpu_to_le16((CURSEG_HOT_DATA << 10));
+
+	journal->sit_j.entries[10].segno = cp->cur_gc_data_segno[1];
+	journal->sit_j.entries[10].se.vblocks =
+				cpu_to_le16((CURSEG_WARM_DATA << 10));
+
+	journal->sit_j.entries[11].segno = cp->cur_gc_data_segno[2];
+	journal->sit_j.entries[11].se.vblocks =
+				cpu_to_le16((CURSEG_COLD_DATA << 10));
+
 
 	memcpy(sum_compact_p, &journal->n_sits, SUM_JOURNAL_SIZE);
 	sum_compact_p += SUM_JOURNAL_SIZE;
@@ -844,6 +916,7 @@ static int f2fs_write_check_point_pack(void)
 
 	/* warm data summary, nothing to do */
 	/* cold data summary, nothing to do */
+	/* hot, warm, cold - GC data summary, nothing to do */
 
 	cp_seg_blk++;
 	DBG(1, "\tWriting Segment summary for HOT/WARM/COLD_DATA, at offset 0x%08"PRIx64"\n",
@@ -893,6 +966,40 @@ static int f2fs_write_check_point_pack(void)
 	}
 
 	/* Fill segment summary for COLD_NODE to zero. */
+	memset(sum, 0, sizeof(struct f2fs_summary_block));
+	SET_SUM_TYPE((&sum->footer), SUM_TYPE_NODE);
+	cp_seg_blk++;
+	DBG(1, "\tWriting Segment summary for COLD_NODE, at offset 0x%08"PRIx64"\n",
+			cp_seg_blk);
+	if (dev_write_block(sum, cp_seg_blk)) {
+		MSG(1, "\tError: While writing the sum_blk to disk!!!\n");
+		goto free_cp_payload;
+	}
+
+	/* Fill segment summary for Current GC segment summaries */
+	/* segment summary for GC_HOT_NODE_SEG set to 0 */
+	memset(sum, 0, sizeof(struct f2fs_summary_block));
+	SET_SUM_TYPE((&sum->footer), SUM_TYPE_NODE);
+	cp_seg_blk++;
+	DBG(1, "\tWriting Segment summary for COLD_NODE, at offset 0x%08"PRIx64"\n",
+			cp_seg_blk);
+	if (dev_write_block(sum, cp_seg_blk)) {
+		MSG(1, "\tError: While writing the sum_blk to disk!!!\n");
+		goto free_cp_payload;
+	}
+
+	/* segment summary for GC_WARM_NODE_SEG set to 0 */
+	memset(sum, 0, sizeof(struct f2fs_summary_block));
+	SET_SUM_TYPE((&sum->footer), SUM_TYPE_NODE);
+	cp_seg_blk++;
+	DBG(1, "\tWriting Segment summary for COLD_NODE, at offset 0x%08"PRIx64"\n",
+			cp_seg_blk);
+	if (dev_write_block(sum, cp_seg_blk)) {
+		MSG(1, "\tError: While writing the sum_blk to disk!!!\n");
+		goto free_cp_payload;
+	}
+
+	/* segment summary for GC_COLD_NODE_SEG set to 0 */
 	memset(sum, 0, sizeof(struct f2fs_summary_block));
 	SET_SUM_TYPE((&sum->footer), SUM_TYPE_NODE);
 	cp_seg_blk++;

@@ -339,6 +339,7 @@ struct f2fs_configuration {
 	double overprovision;
 	double new_overprovision;
 	u_int32_t cur_seg[6];
+	u_int32_t gc_cur_seg[6];
 	u_int32_t segs_per_sec;
 	u_int32_t secs_per_zone;
 	u_int32_t segs_per_zone;
@@ -676,6 +677,14 @@ struct f2fs_checkpoint {
 	/* information of current data segments */
 	__le32 cur_data_segno[MAX_ACTIVE_DATA_LOGS];
 	__le16 cur_data_blkoff[MAX_ACTIVE_DATA_LOGS];
+
+	/* information of current GC  node segments */
+	__le32 cur_gc_node_segno[MAX_ACTIVE_NODE_LOGS];
+	__le16 cur_gc_node_blkoff[MAX_ACTIVE_NODE_LOGS];
+	/* information of current GC data segments */
+	__le32 cur_gc_data_segno[MAX_ACTIVE_DATA_LOGS];
+	__le16 cur_gc_data_blkoff[MAX_ACTIVE_DATA_LOGS];
+
 	__le32 ckpt_flags;		/* Flags : umount and journal_present */
 	__le32 cp_pack_total_block_count;	/* total # of one cp pack */
 	__le32 cp_pack_start_sum;	/* start block number of data summary */
