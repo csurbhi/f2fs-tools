@@ -108,6 +108,7 @@ struct curseg_info {
 struct f2fs_sm_info {
 	struct sit_info *sit_info;
 	struct curseg_info *curseg_array;
+	struct curseg_info *cur_gc_seg_array;
 
 	block_t seg0_blkaddr;
 	block_t main_blkaddr;
@@ -117,6 +118,11 @@ struct f2fs_sm_info {
 	unsigned int main_segments;
 	unsigned int reserved_segments;
 	unsigned int ovp_segments;
+};
+
+struct cur_section_type {
+	FS_IO;
+	GC_IO;
 };
 
 struct f2fs_dentry_ptr {
@@ -349,15 +355,21 @@ static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
 	return (struct curseg_info *)(SM_I(sbi)->curseg_array + type);
 }
 
+static inline struct curseg_info *CUR_GC_SEG_I(struct f2fs_sb_info *sbi, int type)
+{
+	return (struct curseg_info *)(SM_I(sbi)->cur_gc_seg_array + type);
+}
+
+
 static inline block_t start_sum_block(struct f2fs_sb_info *sbi)
 {
 	return __start_cp_addr(sbi) + le32_to_cpu(F2FS_CKPT(sbi)->cp_pack_start_sum);
 }
 
-static inline block_t sum_blk_addr(struct f2fs_sb_info *sbi, int base, int type)
+static inline block_t sum_blk_addr(struct f2fs_sb_info *sbi, int base, int type, int delta)
 {
 	return __start_cp_addr(sbi) + le32_to_cpu(F2FS_CKPT(sbi)->cp_pack_total_block_count)
-		- (base + 1) + type;
+		- (base + 1) + type + delta;
 }
 
 #define nats_in_cursum(jnl)             (le16_to_cpu(jnl->n_nats))
@@ -408,6 +420,18 @@ static inline int IS_CUR_SEGNO(struct f2fs_sb_info *sbi, u32 segno)
 	return 0;
 }
 
+static inline int IS_CUR_GC_SEGNO(struct f2fs_sb_info *sbi, u32 segno)
+{
+	int i;
+
+	for (i = 0; i < NO_CHECK_TYPE; i++) {
+		struct curseg_info *curseg = CUR_GC_SEG_I(sbi, i);
+
+		if (segno == curseg->segno)
+			return 1;
+	}
+	return 0;
+}
 static inline u64 BLKOFF_FROM_MAIN(struct f2fs_sb_info *sbi, u64 blk_addr)
 {
 	ASSERT(blk_addr >= SM_I(sbi)->main_blkaddr);

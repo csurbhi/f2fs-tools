@@ -1807,7 +1807,7 @@ int fsck_chk_meta(struct f2fs_sb_info *sbi)
 		se = get_seg_entry(sbi, i);
 		if (se->valid_blocks != 0)
 			sit_valid_segs++;
-		else if (IS_CUR_SEGNO(sbi, i)) {
+		else if (IS_CUR_SEGNO(sbi, i) || IS_CUR_GC_SEGNO(sbi, i)) {
 			/* curseg has not been written back to device */
 			MSG(1, "\tInfo: curseg %u is counted in valid segs\n", i);
 			sit_valid_segs++;
@@ -2017,6 +2017,16 @@ static void flush_curseg_sit_entries(struct f2fs_sb_info *sbi)
 		sit->vblocks = cpu_to_le16((se->type << SIT_VBLOCKS_SHIFT) |
 							se->valid_blocks);
 		rewrite_current_sit_page(sbi, curseg->segno, sit_blk);
+
+		curseg = CUR_GC_SEG_I(sbi, i);
+
+		se = get_seg_entry(sbi, curseg->segno);
+		get_current_sit_page(sbi, curseg->segno, sit_blk);
+		sit = &sit_blk->entries[SIT_ENTRY_OFFSET(sit_i, curseg->segno)];
+		sit->vblocks = cpu_to_le16((se->type << SIT_VBLOCKS_SHIFT) |
+							se->valid_blocks);
+		rewrite_current_sit_page(sbi, curseg->segno, sit_blk);
+
 	}
 
 	free(sit_blk);
@@ -2068,9 +2078,9 @@ static void fix_checkpoint(struct f2fs_sb_info *sbi)
 	}
 
 	if (flags & CP_UMOUNT_FLAG)
-		cp_blocks = 8;
+		cp_blocks = 14;
 	else
-		cp_blocks = 5;
+		cp_blocks = 8;
 
 	set_cp(cp_pack_total_block_count, cp_blocks +
 				orphan_blks + get_sb(cp_payload));
@@ -2103,14 +2113,21 @@ static void fix_checkpoint(struct f2fs_sb_info *sbi)
 
 	cp_blk_no += orphan_blks;
 
-	for (i = 0; i < NO_CHECK_TYPE; i++) {
-		struct curseg_info *curseg = CURSEG_I(sbi, i);
+	for (j = 0; j < 2; j++) {
+		for (i = 0; i < NO_CHECK_TYPE; i++) {
+			struct curseg_info *curseg;
+		       
+			if (j == 0)
+				curseg = CURSEG_I(sbi, i);
+			else
+				curseg = CUR_GC_SEG_I(sbi, i);
 
-		if (!(flags & CP_UMOUNT_FLAG) && IS_NODESEG(i))
-			continue;
+			if (!(flags & CP_UMOUNT_FLAG) && IS_NODESEG(i))
+				continue;
 
-		ret = dev_write_block(curseg->sum_blk, cp_blk_no++);
-		ASSERT(ret >= 0);
+			ret = dev_write_block(curseg->sum_blk, cp_blk_no++);
+			ASSERT(ret >= 0);
+		}
 	}
 
 	ret = dev_write_block(cp, cp_blk_no++);
@@ -2121,7 +2138,7 @@ static void fix_checkpoint(struct f2fs_sb_info *sbi)
 		write_nat_bits(sbi, sb, cp, sbi->cur_cp);
 }
 
-int check_curseg_offset(struct f2fs_sb_info *sbi, int type)
+int check_curseg_offset(struct f2fs_sb_info *sbi, int type, int io_type)
 {
 	struct curseg_info *curseg = CURSEG_I(sbi, type);
 	struct seg_entry *se;
@@ -2166,12 +2183,18 @@ int check_curseg_offsets(struct f2fs_sb_info *sbi)
 
 static void fix_curseg_info(struct f2fs_sb_info *sbi)
 {
-	int i, need_update = 0;
+	int i, j, need_update = 0, int io_type;
 
-	for (i = 0; i < NO_CHECK_TYPE; i++) {
-		if (check_curseg_offset(sbi, i)) {
-			update_curseg_info(sbi, i);
-			need_update = 1;
+	for (j = 0; j < 2; j++) {
+		if (j == 0)
+			io_type = FS_IO;
+		else
+			io_type = GC_IO;
+		for (i = 0; i < NO_CHECK_TYPE; i++) {
+			if (check_curseg_offset(sbi, i, io_type)) {
+				update_curseg_info(sbi, i, io_type);
+				need_update = 1;
+			}
 		}
 	}
 
@@ -2573,35 +2596,41 @@ int fsck_chk_curseg_info(struct f2fs_sb_info *sbi)
 	struct curseg_info *curseg;
 	struct seg_entry *se;
 	struct f2fs_summary_block *sum_blk;
-	int i, ret = 0;
+	int i, j, ret = 0;
 
-	for (i = 0; i < NO_CHECK_TYPE; i++) {
-		curseg = CURSEG_I(sbi, i);
-		se = get_seg_entry(sbi, curseg->segno);
-		sum_blk = curseg->sum_blk;
+	for (j = 0; j < 2; j++) {
+		for (i = 0; i < NO_CHECK_TYPE; i++) {
+			if (j == 0)
+				curseg = CURSEG_I(sbi, i);
+			else
+				curseg = CUR_GC_SEG_I(sbi, i);
+			se = get_seg_entry(sbi, curseg->segno);
+			sum_blk = curseg->sum_blk;
 
-		if (se->type != i) {
-			ASSERT_MSG("Incorrect curseg [%d]: segno [0x%x] "
-				   "type(SIT) [%d]", i, curseg->segno,
-				   se->type);
-			if (c.fix_on || c.preen_mode)
-				se->type = i;
-			ret = -1;
+			if (se->type != i) {
+				ASSERT_MSG("Incorrect curseg [%d]: segno [0x%x] "
+					   "type(SIT) [%d]", i, curseg->segno,
+					   se->type);
+				if (c.fix_on || c.preen_mode)
+					se->type = i;
+				ret = -1;
+			}
+			if (i <= CURSEG_COLD_DATA && IS_SUM_DATA_SEG(sum_blk->footer)) {
+				continue;
+			} else if (i > CURSEG_COLD_DATA && IS_SUM_NODE_SEG(sum_blk->footer)) {
+				continue;
+			} else {
+				ASSERT_MSG("Incorrect curseg [%d]: segno [0x%x] "
+					   "type(SSA) [%d]", i, curseg->segno,
+					   sum_blk->footer.entry_type);
+				if (c.fix_on || c.preen_mode)
+					sum_blk->footer.entry_type =
+						i <= CURSEG_COLD_DATA ?
+						SUM_TYPE_DATA : SUM_TYPE_NODE;
+				ret = -1;
+			}
 		}
-		if (i <= CURSEG_COLD_DATA && IS_SUM_DATA_SEG(sum_blk->footer)) {
-			continue;
-		} else if (i > CURSEG_COLD_DATA && IS_SUM_NODE_SEG(sum_blk->footer)) {
-			continue;
-		} else {
-			ASSERT_MSG("Incorrect curseg [%d]: segno [0x%x] "
-				   "type(SSA) [%d]", i, curseg->segno,
-				   sum_blk->footer.entry_type);
-			if (c.fix_on || c.preen_mode)
-				sum_blk->footer.entry_type =
-					i <= CURSEG_COLD_DATA ?
-					SUM_TYPE_DATA : SUM_TYPE_NODE;
-			ret = -1;
-		}
+
 	}
 
 	return ret;

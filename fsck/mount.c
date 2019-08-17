@@ -35,7 +35,8 @@ u32 get_free_segments(struct f2fs_sb_info *sbi)
 	for (i = 0; i < TOTAL_SEGS(sbi); i++) {
 		struct seg_entry *se = get_seg_entry(sbi, i);
 
-		if (se->valid_blocks == 0x0 && !IS_CUR_SEGNO(sbi, i))
+		if (se->valid_blocks == 0x0 && !IS_CUR_SEGNO(sbi, i) 
+				&& !IS_CUR_GC_SEGNO(sbi, i))
 			free_segs++;
 	}
 	return free_segs;
@@ -1376,11 +1377,16 @@ free_sit_info:
 	return -ENOMEM;
 }
 
-void reset_curseg(struct f2fs_sb_info *sbi, int type)
+void reset_curseg(struct f2fs_sb_info *sbi, int type, int io_type)
 {
-	struct curseg_info *curseg = CURSEG_I(sbi, type);
+	struct curseg_info *curseg;
 	struct summary_footer *sum_footer;
 	struct seg_entry *se;
+
+	if (io_type == FS_IO)
+		curseg = CURSEG_I(sbi, type);
+	else
+		curseg = CUR_GC_SEG_I(sbi, type);
 
 	sum_footer = &(curseg->sum_blk->footer);
 	memset(sum_footer, 0, sizeof(struct summary_footer));
@@ -1421,7 +1427,32 @@ static void read_compacted_summaries(struct f2fs_sb_info *sbi)
 		unsigned short blk_off;
 		struct curseg_info *curseg = CURSEG_I(sbi, i);
 
-		reset_curseg(sbi, i);
+		reset_curseg(sbi, i, FS_IO);
+
+		if (curseg->alloc_type == SSR)
+			blk_off = sbi->blocks_per_seg;
+		else
+			blk_off = curseg->next_blkoff;
+
+		ASSERT(blk_off <= ENTRIES_IN_SUM);
+
+		for (j = 0; j < blk_off; j++) {
+			struct f2fs_summary *s;
+			s = (struct f2fs_summary *)(kaddr + offset);
+			curseg->sum_blk->entries[j] = *s;
+			offset += SUMMARY_SIZE;
+			if (offset + SUMMARY_SIZE <=
+					PAGE_CACHE_SIZE - SUM_FOOTER_SIZE)
+				continue;
+
+			memset(kaddr, 0, PAGE_SIZE);
+			ret = dev_read_block(kaddr, start++);
+			ASSERT(ret >= 0);
+			offset = 0;
+		}
+
+		curseg = CUR_GC_SEG_I(sbi, i);
+		reset_curseg(sbi, i, GC_IO);
 
 		if (curseg->alloc_type == SSR)
 			blk_off = sbi->blocks_per_seg;
@@ -1443,6 +1474,8 @@ static void read_compacted_summaries(struct f2fs_sb_info *sbi)
 			ASSERT(ret >= 0);
 			offset = 0;
 		}
+
+
 	}
 	free(kaddr);
 }
@@ -1472,26 +1505,29 @@ static void restore_node_summary(struct f2fs_sb_info *sbi,
 	free(node_blk);
 }
 
-static void read_normal_summaries(struct f2fs_sb_info *sbi, int type)
+static void read_normal_summaries(struct f2fs_sb_info *sbi, int type, int io_type)
 {
 	struct f2fs_checkpoint *cp = F2FS_CKPT(sbi);
 	struct f2fs_summary_block *sum_blk;
 	struct curseg_info *curseg;
 	unsigned int segno = 0;
 	block_t blk_addr = 0;
-	int ret;
+	int ret, delta = 0;
+
+	if (io_type == GC_IO)
+		delta = 3;
 
 	if (IS_DATASEG(type)) {
 		segno = get_cp(cur_data_segno[type]);
 		if (is_set_ckpt_flags(cp, CP_UMOUNT_FLAG))
-			blk_addr = sum_blk_addr(sbi, NR_CURSEG_TYPE, type);
+			blk_addr = sum_blk_addr(sbi, NR_CURSEG_TYPE, type, delta);
 		else
-			blk_addr = sum_blk_addr(sbi, NR_CURSEG_DATA_TYPE, type);
+			blk_addr = sum_blk_addr(sbi, NR_CURSEG_DATA_TYPE, type, delta);
 	} else {
 		segno = get_cp(cur_node_segno[type - CURSEG_HOT_NODE]);
 		if (is_set_ckpt_flags(cp, CP_UMOUNT_FLAG))
 			blk_addr = sum_blk_addr(sbi, NR_CURSEG_NODE_TYPE,
-							type - CURSEG_HOT_NODE);
+							type - CURSEG_HOT_NODE, delta);
 		else
 			blk_addr = GET_SUM_BLKADDR(sbi, segno);
 	}
@@ -1505,9 +1541,12 @@ static void read_normal_summaries(struct f2fs_sb_info *sbi, int type)
 	if (IS_NODESEG(type) && !is_set_ckpt_flags(cp, CP_UMOUNT_FLAG))
 		restore_node_summary(sbi, segno, sum_blk);
 
-	curseg = CURSEG_I(sbi, type);
+	if (io_type == FS_IO)
+		curseg = CURSEG_I(sbi, type);
+	else
+		curseg = CUR_GC_SEG_I(sbi, type);
 	memcpy(curseg->sum_blk, sum_blk, PAGE_CACHE_SIZE);
-	reset_curseg(sbi, type);
+	reset_curseg(sbi, type, io_type);
 	free(sum_blk);
 }
 
@@ -1547,14 +1586,16 @@ static void restore_curseg_summaries(struct f2fs_sb_info *sbi)
 		type = CURSEG_HOT_NODE;
 	}
 
-	for (; type <= CURSEG_COLD_NODE; type++)
-		read_normal_summaries(sbi, type);
+	for (; type <= CURSEG_COLD_NODE; type++) {
+		read_normal_summaries(sbi, type, FS_IO);
+		read_normal_summaries(sbi, type, GC_IO);
+	}
 }
 
 static int build_curseg(struct f2fs_sb_info *sbi)
 {
 	struct f2fs_checkpoint *cp = F2FS_CKPT(sbi);
-	struct curseg_info *array;
+	struct curseg_info *array, *gc_array;
 	unsigned short blk_off;
 	unsigned int segno;
 	int i;
@@ -1566,6 +1607,16 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 	}
 
 	SM_I(sbi)->curseg_array = array;
+
+	gc_array = malloc(sizeof(*array) * NR_CURSEG_TYPE);
+	if (!gc_array) {
+		MSG(1, "\tError: Malloc failed for build_curseg!\n");
+		goto seg_cleanup;
+	}
+
+	SM_I(sbi)->curseg_array = array;
+	SM_I(sbi)->cur_gc_seg_array = gc_array;
+
 
 	for (i = 0; i < NR_CURSEG_TYPE; i++) {
 		array[i].sum_blk = malloc(PAGE_CACHE_SIZE);
@@ -2159,11 +2210,18 @@ void flush_sit_entries(struct f2fs_sb_info *sbi)
 	free(sit_blk);
 }
 
-int relocate_curseg_offset(struct f2fs_sb_info *sbi, int type)
+int relocate_curseg_offset(struct f2fs_sb_info *sbi, int type, int io_type)
 {
-	struct curseg_info *curseg = CURSEG_I(sbi, type);
-	struct seg_entry *se = get_seg_entry(sbi, curseg->segno);
+	struct curseg_info *curseg;
+	struct seg_entry *se;
 	unsigned int i;
+
+	if (io_type == FS_IO)
+		curseg == CURSEG_I(sbi, type);
+	else
+		curseg = CUR_GC_SEG_I(sbi, type);
+
+	se = get_seg_entry(sbi, curseg->segno);
 
 	for (i = 0; i < sbi->blocks_per_seg; i++) {
 		if (!f2fs_test_bit(i, (const char *)se->cur_valid_map))
@@ -2205,7 +2263,8 @@ int find_next_free_block(struct f2fs_sb_info *sbi, u64 *to, int left, int type)
 		se = get_seg_entry(sbi, segno);
 
 		if (se->valid_blocks == sbi->blocks_per_seg ||
-				IS_CUR_SEGNO(sbi, segno)) {
+				IS_CUR_SEGNO(sbi, segno) || 
+	       			IS_CUR_GC_SEGNO(sbi, segno)) {
 			*to = left ? START_BLOCK(sbi, segno) - 1:
 						START_BLOCK(sbi, segno + 1);
 			continue;
@@ -2279,9 +2338,9 @@ void move_curseg_info(struct f2fs_sb_info *sbi, u64 from, int left)
 	}
 }
 
-void update_curseg_info(struct f2fs_sb_info *sbi, int type)
+void update_curseg_info(struct f2fs_sb_info *sbi, int type, int io_type)
 {
-	if (!relocate_curseg_offset(sbi, type))
+	if (!relocate_curseg_offset(sbi, type, io_type))
 		return;
 	move_curseg_info(sbi, SM_I(sbi)->main_blkaddr, 0);
 }

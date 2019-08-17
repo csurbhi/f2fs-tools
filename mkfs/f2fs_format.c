@@ -709,8 +709,8 @@ static int f2fs_write_check_point_pack(void)
 	set_cp(free_segment_count, get_sb(segment_count_main) - 12); /* Adding 6 more for GC node segments*/
 	set_cp(user_block_count, ((get_cp(free_segment_count) + 12 -
 			get_cp(overprov_segment_count)) * c.blks_per_seg));
-	/* cp page (2), data summaries (1), node summaries (3) */
-	set_cp(cp_pack_total_block_count, 6 + get_sb(cp_payload));
+	/* cp page (2), data summaries (1), node summaries (6) */
+	set_cp(cp_pack_total_block_count, 9 + get_sb(cp_payload));
 	flags = CP_UMOUNT_FLAG | CP_COMPACT_SUM_FLAG;
 	if (get_cp(cp_pack_total_block_count) <=
 			(1 << get_sb(log_blocks_per_seg)) - nat_bits_blocks)
