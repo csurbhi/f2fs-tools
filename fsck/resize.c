@@ -494,11 +494,15 @@ static void rebuild_checkpoint(struct f2fs_sb_info *sbi,
 		if (i < CURSEG_HOT_NODE) {
 			set_cp(cur_data_segno[i],
 					CURSEG_I(sbi, i)->segno - offset);
+			set_cp(cur_gc_data_segno[i],
+					CUR_GC_SEG_I(sbi, i)->segno - offset);
 		} else {
 			int n = i - CURSEG_HOT_NODE;
 
 			set_cp(cur_node_segno[n],
 					CURSEG_I(sbi, i)->segno - offset);
+			set_cp(cur_gc_node_segno[n],
+					CUR_GC_SEG_I(sbi, i)->segno - offset);
 		}
 	}
 
@@ -560,6 +564,9 @@ static void rebuild_checkpoint(struct f2fs_sb_info *sbi,
 	for (i = 0; i < NO_CHECK_TYPE; i++) {
 		struct curseg_info *curseg = CURSEG_I(sbi, i);
 
+		ret = dev_write_block(curseg->sum_blk, new_cp_blk_no++);
+		ASSERT(ret >= 0);
+		curseg = CUR_GC_SEG_I(sbi, i);
 		ret = dev_write_block(curseg->sum_blk, new_cp_blk_no++);
 		ASSERT(ret >= 0);
 	}

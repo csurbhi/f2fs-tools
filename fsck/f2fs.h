@@ -120,9 +120,9 @@ struct f2fs_sm_info {
 	unsigned int ovp_segments;
 };
 
-struct cur_section_type {
-	FS_IO;
-	GC_IO;
+enum cur_section_type {
+	FS_IO,
+	GC_IO,
 };
 
 struct f2fs_dentry_ptr {

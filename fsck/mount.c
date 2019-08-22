@@ -1406,6 +1406,7 @@ static void read_compacted_summaries(struct f2fs_sb_info *sbi)
 	block_t start;
 	char *kaddr;
 	int ret;
+	unsigned short blk_off;
 
 	start = start_sum_block(sbi);
 
@@ -1423,9 +1424,9 @@ static void read_compacted_summaries(struct f2fs_sb_info *sbi)
 						SUM_JOURNAL_SIZE);
 
 	offset = 2 * SUM_JOURNAL_SIZE;
+	/* First write the HOT_DATA, WARM_DATA and COLD DATA */
 	for (i = CURSEG_HOT_DATA; i <= CURSEG_COLD_DATA; i++) {
-		unsigned short blk_off;
-		struct curseg_info *curseg = CURSEG_I(sbi, i);
+		curseg = CURSEG_I(sbi, i);
 
 		reset_curseg(sbi, i, FS_IO);
 
@@ -1450,7 +1451,9 @@ static void read_compacted_summaries(struct f2fs_sb_info *sbi)
 			ASSERT(ret >= 0);
 			offset = 0;
 		}
-
+	}
+	/* follow this up with GC HOT_DATA, GC WARM DATA, GC COLD DATA*/
+	for (i = CURSEG_HOT_DATA; i <= CURSEG_COLD_DATA; i++) {
 		curseg = CUR_GC_SEG_I(sbi, i);
 		reset_curseg(sbi, i, GC_IO);
 
@@ -1474,8 +1477,6 @@ static void read_compacted_summaries(struct f2fs_sb_info *sbi)
 			ASSERT(ret >= 0);
 			offset = 0;
 		}
-
-
 	}
 	free(kaddr);
 }
@@ -1765,6 +1766,18 @@ struct f2fs_summary_block *get_sum_block(struct f2fs_sb_info *sbi,
 			}
 			return curseg->sum_blk;
 		}
+		if (segno == get_cp(cur_gc_node_segno[type])) {
+			curseg = CUR_GC_SEG_I(sbi, CURSEG_HOT_NODE + type);
+			if (!IS_SUM_NODE_SEG(curseg->sum_blk->footer)) {
+				ASSERT_MSG("segno [0x%x] indicates a data "
+						"segment, but should be node",
+						segno);
+				*ret_type = -SEG_TYPE_CUR_NODE;
+			} else {
+				*ret_type = SEG_TYPE_CUR_NODE;
+			}
+			return curseg->sum_blk;
+		}
 	}
 
 	for (type = 0; type < NR_CURSEG_DATA_TYPE; type++) {
@@ -1780,6 +1793,19 @@ struct f2fs_summary_block *get_sum_block(struct f2fs_sb_info *sbi,
 			}
 			return curseg->sum_blk;
 		}
+		if (segno == get_cp(cur_gc_data_segno[type])) {
+			curseg = CUR_GC_SEG_I(sbi, type);
+			if (IS_SUM_NODE_SEG(curseg->sum_blk->footer)) {
+				ASSERT_MSG("segno [0x%x] indicates a node "
+						"segment, but should be data",
+						segno);
+				*ret_type = -SEG_TYPE_CUR_DATA;
+			} else {
+				*ret_type = SEG_TYPE_CUR_DATA;
+			}
+			return curseg->sum_blk;
+		}
+
 	}
 
 	sum_blk = calloc(BLOCK_SZ, 1);
@@ -2331,7 +2357,7 @@ void move_curseg_info(struct f2fs_sb_info *sbi, u64 from, int left)
 		memcpy(curseg->sum_blk, &buf, SUM_ENTRIES_SIZE);
 
 		/* update se->types */
-		reset_curseg(sbi, i);
+		reset_curseg(sbi, i, FS_IO);
 
 		DBG(1, "Move curseg[%d] %x -> %x after %"PRIx64"\n",
 				i, old_segno, curseg->segno, from);
@@ -2349,8 +2375,10 @@ void zero_journal_entries(struct f2fs_sb_info *sbi)
 {
 	int i;
 
-	for (i = 0; i < NO_CHECK_TYPE; i++)
+	for (i = 0; i < NO_CHECK_TYPE; i++) {
 		CURSEG_I(sbi, i)->sum_blk->journal.n_nats = 0;
+		CUR_GC_SEG_I(sbi, i)->sum_blk->journal.n_nats = 0;
+	}
 }
 
 void write_curseg_info(struct f2fs_sb_info *sbi)
@@ -2371,6 +2399,20 @@ void write_curseg_info(struct f2fs_sb_info *sbi)
 			set_cp(cur_node_blkoff[n],
 					CURSEG_I(sbi, i)->next_blkoff);
 		}
+
+		cp->alloc_type[i] = CUR_GC_SEG_I(sbi, i)->alloc_type;
+		if (i < CURSEG_HOT_NODE) {
+			set_cp(cur_gc_data_segno[i], CUR_GC_SEG_I(sbi, i)->segno);
+			set_cp(cur_gc_data_blkoff[i],
+					CUR_GC_SEG_I(sbi, i)->next_blkoff);
+		} else {
+			int n = i - CURSEG_HOT_NODE;
+
+			set_cp(cur_gc_node_segno[n], CUR_GC_SEG_I(sbi, i)->segno);
+			set_cp(cur_gc_node_blkoff[n],
+					CUR_GC_SEG_I(sbi, i)->next_blkoff);
+		}
+
 	}
 }
 
@@ -2485,9 +2527,56 @@ void write_checkpoint(struct f2fs_sb_info *sbi)
 	cp_blk_no += orphan_blks;
 
 	/* update summary blocks having nullified journal entries */
-	for (i = 0; i < NO_CHECK_TYPE; i++) {
-		struct curseg_info *curseg = CURSEG_I(sbi, i);
+	/* Hot data, Hot GC data, Cold data and Cold GC data */
+	for (i = 0; i < CURSEG_HOT_NODE; i++) {
+		struct curseg_info *curseg;
 		u64 ssa_blk;
+
+		curseg = CURSEG_I(sbi, i);
+
+		ret = dev_write_block(curseg->sum_blk, cp_blk_no++);
+		ASSERT(ret >= 0);
+
+		/* update original SSA too */
+		ssa_blk = GET_SUM_BLKADDR(sbi, curseg->segno);
+		ret = dev_write_block(curseg->sum_blk, ssa_blk);
+		ASSERT(ret >= 0);
+	}
+	for (i = 0; i < CURSEG_HOT_NODE; i++) {
+		struct curseg_info *curseg;
+		u64 ssa_blk;
+
+		curseg = CUR_GC_SEG_I(sbi, i);
+
+		ret = dev_write_block(curseg->sum_blk, cp_blk_no++);
+		ASSERT(ret >= 0);
+
+		/* update original SSA too */
+		ssa_blk = GET_SUM_BLKADDR(sbi, curseg->segno);
+		ret = dev_write_block(curseg->sum_blk, ssa_blk);
+		ASSERT(ret >= 0);
+	}
+
+	for (i = CURSEG_HOT_NODE; i < NO_CHECK_TYPE; i++) {
+		struct curseg_info *curseg;
+		u64 ssa_blk;
+
+		curseg = CURSEG_I(sbi, i);
+
+		ret = dev_write_block(curseg->sum_blk, cp_blk_no++);
+		ASSERT(ret >= 0);
+
+		/* update original SSA too */
+		ssa_blk = GET_SUM_BLKADDR(sbi, curseg->segno);
+		ret = dev_write_block(curseg->sum_blk, ssa_blk);
+		ASSERT(ret >= 0);
+	}
+
+	for (i = CURSEG_HOT_NODE; i < NO_CHECK_TYPE; i++) {
+		struct curseg_info *curseg;
+		u64 ssa_blk;
+
+		curseg = CUR_GC_SEG_I(sbi, i);
 
 		ret = dev_write_block(curseg->sum_blk, cp_blk_no++);
 		ASSERT(ret >= 0);

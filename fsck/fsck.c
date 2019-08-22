@@ -2000,16 +2000,17 @@ static void flush_curseg_sit_entries(struct f2fs_sb_info *sbi)
 	struct sit_info *sit_i = SIT_I(sbi);
 	struct f2fs_sit_block *sit_blk;
 	int i;
+	struct curseg_info *curseg;
+	struct f2fs_sit_entry *sit;
+	struct seg_entry *se;
 
 	sit_blk = calloc(BLOCK_SZ, 1);
 	ASSERT(sit_blk);
 	/* update curseg sit entries, since we may change
 	 * a segment type in move_curseg_info
 	 */
-	for (i = 0; i < NO_CHECK_TYPE; i++) {
-		struct curseg_info *curseg = CURSEG_I(sbi, i);
-		struct f2fs_sit_entry *sit;
-		struct seg_entry *se;
+	for (i = 0; i < CURSEG_HOT_NODE; i++) {
+		curseg = CURSEG_I(sbi, i);
 
 		se = get_seg_entry(sbi, curseg->segno);
 		get_current_sit_page(sbi, curseg->segno, sit_blk);
@@ -2017,7 +2018,28 @@ static void flush_curseg_sit_entries(struct f2fs_sb_info *sbi)
 		sit->vblocks = cpu_to_le16((se->type << SIT_VBLOCKS_SHIFT) |
 							se->valid_blocks);
 		rewrite_current_sit_page(sbi, curseg->segno, sit_blk);
+	}
+	for (i = 0; i < CURSEG_HOT_NODE; i++) {
+		curseg = CUR_GC_SEG_I(sbi, i);
 
+		se = get_seg_entry(sbi, curseg->segno);
+		get_current_sit_page(sbi, curseg->segno, sit_blk);
+		sit = &sit_blk->entries[SIT_ENTRY_OFFSET(sit_i, curseg->segno)];
+		sit->vblocks = cpu_to_le16((se->type << SIT_VBLOCKS_SHIFT) |
+							se->valid_blocks);
+		rewrite_current_sit_page(sbi, curseg->segno, sit_blk);
+	}
+	for (i = 0; i < CURSEG_HOT_NODE; i++) {
+		curseg = CURSEG_I(sbi, i);
+
+		se = get_seg_entry(sbi, curseg->segno);
+		get_current_sit_page(sbi, curseg->segno, sit_blk);
+		sit = &sit_blk->entries[SIT_ENTRY_OFFSET(sit_i, curseg->segno)];
+		sit->vblocks = cpu_to_le16((se->type << SIT_VBLOCKS_SHIFT) |
+							se->valid_blocks);
+		rewrite_current_sit_page(sbi, curseg->segno, sit_blk);
+	}
+	for (i = 0; i < CURSEG_HOT_NODE; i++) {
 		curseg = CUR_GC_SEG_I(sbi, i);
 
 		se = get_seg_entry(sbi, curseg->segno);
@@ -2028,7 +2050,6 @@ static void flush_curseg_sit_entries(struct f2fs_sb_info *sbi)
 		rewrite_current_sit_page(sbi, curseg->segno, sit_blk);
 
 	}
-
 	free(sit_blk);
 }
 
@@ -2113,7 +2134,7 @@ static void fix_checkpoint(struct f2fs_sb_info *sbi)
 
 	cp_blk_no += orphan_blks;
 
-	for (j = 0; j < 2; j++) {
+	for (int j = 0; j < 2; j++) {
 		for (i = 0; i < NO_CHECK_TYPE; i++) {
 			struct curseg_info *curseg;
 		       
@@ -2140,9 +2161,14 @@ static void fix_checkpoint(struct f2fs_sb_info *sbi)
 
 int check_curseg_offset(struct f2fs_sb_info *sbi, int type, int io_type)
 {
-	struct curseg_info *curseg = CURSEG_I(sbi, type);
+	struct curseg_info *curseg;
 	struct seg_entry *se;
 	int j, nblocks;
+
+	if (io_type == FS_IO)
+		curseg = CURSEG_I(sbi, type);
+	else
+		curseg = CUR_GC_SEG_I(sbi, type);
 
 	if ((curseg->next_blkoff >> 3) >= SIT_VBLOCK_MAP_SIZE) {
 		ASSERT_MSG("Next block offset:%u is invalid, type:%d",
@@ -2171,19 +2197,25 @@ int check_curseg_offset(struct f2fs_sb_info *sbi, int type, int io_type)
 
 int check_curseg_offsets(struct f2fs_sb_info *sbi)
 {
-	int i, ret;
+	int i, j, ret, io_type;
 
-	for (i = 0; i < NO_CHECK_TYPE; i++) {
-		ret = check_curseg_offset(sbi, i);
-		if (ret)
-			return ret;
+	for (j = 0; j < 2; j++) {
+		if (j == 0)
+			io_type = FS_IO;
+		else
+			io_type = GC_IO;
+		for (i = 0; i < NO_CHECK_TYPE; i++) {
+			ret = check_curseg_offset(sbi, i, io_type);
+			if (ret)
+				return ret;
+		}
 	}
 	return 0;
 }
 
 static void fix_curseg_info(struct f2fs_sb_info *sbi)
 {
-	int i, j, need_update = 0, int io_type;
+	int i, j, need_update = 0, io_type;
 
 	for (j = 0; j < 2; j++) {
 		if (j == 0)
