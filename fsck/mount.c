@@ -778,6 +778,7 @@ static int verify_checksum_chksum(struct f2fs_checkpoint *cp)
 			chksum_offset, crc, cal_crc);
 		return -1;
 	}
+	printf("\n verified checksum: %u", crc);
 	return 0;
 }
 
@@ -798,6 +799,7 @@ void *validate_checkpoint(struct f2fs_sb_info *sbi, block_t cp_addr,
 	cp = (struct f2fs_checkpoint *)cp_page_1;
 	if (verify_checksum_chksum(cp))
 		goto invalid_cp1;
+
 
 	if (get_cp(cp_pack_total_block_count) > sbi->blocks_per_seg)
 		goto invalid_cp1;
@@ -855,7 +857,9 @@ int get_valid_checkpoint(struct f2fs_sb_info *sbi)
 	 * sets( cp pack1 and cp pack 2)
 	 */
 	cp_start_blk_no = get_sb(cp_blkaddr);
+	printf("\n cp_start_blk_no: %lld ", cp_start_blk_no);
 	cp1 = validate_checkpoint(sbi, cp_start_blk_no, &cp1_version);
+
 
 	/* The second checkpoint pack should start at the next segment */
 	cp_start_blk_no += 1 << get_sb(log_blocks_per_seg);
@@ -958,10 +962,12 @@ int sanity_check_ckpt(struct f2fs_sb_info *sbi)
 		MSG(0, "\tWrong user_block_count(%u)\n", user_block_count);
 		return 1;
 	}
+	printf("\n user_block_count: %u ", user_block_count);
 
 	main_segs = get_sb(segment_count_main);
 	blocks_per_seg = sbi->blocks_per_seg;
 
+	printf("\n blocks_per_seg: %d", blocks_per_seg);
 	for (i = 0; i < NR_CURSEG_NODE_TYPE; i++) {
 		if (get_cp(cur_node_segno[i]) >= main_segs ||
 			get_cp(cur_node_blkoff[i]) >= blocks_per_seg)
@@ -976,6 +982,7 @@ int sanity_check_ckpt(struct f2fs_sb_info *sbi)
 	sit_bitmap_size = get_cp(sit_ver_bitmap_bytesize);
 	nat_bitmap_size = get_cp(nat_ver_bitmap_bytesize);
 
+	printf("\n sit_bitmap_size: %lld", sit_bitmap_size);
 	if (sit_bitmap_size != ((sit_segs / 2) << log_blocks_per_seg) / 8 ||
 		nat_bitmap_size != ((nat_segs / 2) << log_blocks_per_seg) / 8) {
 		MSG(0, "\tWrong bitmap size: sit(%u), nat(%u)\n",
@@ -984,7 +991,10 @@ int sanity_check_ckpt(struct f2fs_sb_info *sbi)
 	}
 
 	cp_pack_start_sum = __start_sum_addr(sbi);
+
+	printf("\n cp_pack_start_sum: %d", cp_pack_start_sum);
 	cp_payload = __cp_payload(sbi);
+	printf("\n cp_payload: %d", cp_payload);
 	if (cp_pack_start_sum < cp_payload + 1 ||
 		cp_pack_start_sum > blocks_per_seg - 1 -
 			NR_CURSEG_TYPE) {
@@ -994,7 +1004,7 @@ int sanity_check_ckpt(struct f2fs_sb_info *sbi)
 			return 1;
 		set_sb(cp_payload, cp_pack_start_sum - 1);
 		update_superblock(sb, SB_MASK_ALL);
-	}
+	} 
 
 	return 0;
 }
@@ -1607,8 +1617,6 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 		return -ENOMEM;
 	}
 
-	SM_I(sbi)->curseg_array = array;
-
 	gc_array = malloc(sizeof(*array) * NR_CURSEG_TYPE);
 	if (!gc_array) {
 		MSG(1, "\tError: Malloc failed for build_curseg!\n");
@@ -1617,7 +1625,6 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 
 	SM_I(sbi)->curseg_array = array;
 	SM_I(sbi)->cur_gc_seg_array = gc_array;
-
 
 	for (i = 0; i < NR_CURSEG_TYPE; i++) {
 		array[i].sum_blk = malloc(PAGE_CACHE_SIZE);
@@ -1643,6 +1650,32 @@ static int build_curseg(struct f2fs_sb_info *sbi)
 		array[i].next_blkoff = blk_off;
 		array[i].alloc_type = cp->alloc_type[i];
 	}
+
+	for (i = 0; i < NR_CURSEG_TYPE; i++) {
+		gc_array[i].sum_blk = malloc(PAGE_CACHE_SIZE);
+		if (!gc_array[i].sum_blk) {
+			MSG(1, "\tError: Malloc failed for build_curseg!!\n");
+			goto seg_cleanup;
+		}
+
+		if (i <= CURSEG_COLD_DATA) {
+			blk_off = get_cp(cur_gc_data_blkoff[i]);
+			segno = get_cp(cur_gc_data_segno[i]);
+		}
+		if (i > CURSEG_COLD_DATA) {
+			blk_off = get_cp(cur_gc_node_blkoff[i - CURSEG_HOT_NODE]);
+			segno = get_cp(cur_gc_node_segno[i - CURSEG_HOT_NODE]);
+		}
+		ASSERT(segno < TOTAL_SEGS(sbi));
+		ASSERT(blk_off < DEFAULT_BLOCKS_PER_SEGMENT);
+
+		gc_array[i].segno = segno;
+		gc_array[i].zone = GET_ZONENO_FROM_SEGNO(sbi, segno);
+		gc_array[i].next_segno = NULL_SEGNO;
+		gc_array[i].next_blkoff = blk_off;
+		gc_array[i].alloc_type = cp->alloc_type[i];
+	}
+
 	restore_curseg_summaries(sbi);
 	return 0;
 
@@ -1715,12 +1748,18 @@ void check_block_count(struct f2fs_sb_info *sbi,
 	for (i = 0; i < SIT_VBLOCK_MAP_SIZE; i++)
 		valid_blocks += get_bits_in_byte(raw_sit->valid_map[i]);
 
+	if (valid_blocks) {
+		printf("\n raw_sit->valid_map:  %u", raw_sit->valid_map[0]);
+		printf("\n valid blocks: %u , segno: %u", valid_blocks, segno);
+		printf("\n");
+	}
+
 	if (GET_SIT_VBLOCKS(raw_sit) != valid_blocks)
-		ASSERT_MSG("Wrong SIT valid blocks: segno=0x%x, %u vs. %u",
-				segno, GET_SIT_VBLOCKS(raw_sit), valid_blocks);
+		printf("\n**** Wrong SIT valid blocks: segno=%u, %u vs. %u, raw_sit->valid_map: %c \n",
+				segno, GET_SIT_VBLOCKS(raw_sit), valid_blocks, raw_sit->valid_map[0]);
 
 	if (GET_SIT_TYPE(raw_sit) >= NO_CHECK_TYPE)
-		ASSERT_MSG("Wrong SIT type: segno=0x%x, %u",
+		printf("Wrong SIT type: segno=0x%x, %u",
 				segno, GET_SIT_TYPE(raw_sit));
 }
 
@@ -1989,6 +2028,7 @@ static int build_sit_entries(struct f2fs_sb_info *sbi)
 	}
 
 	free(sit_blk);
+	printf("\n Nr of sits in cursum: %u \n", sits_in_cursum(journal));
 	for (i = 0; i < sits_in_cursum(journal); i++) {
 		segno = le32_to_cpu(segno_in_journal(journal, i));
 		se = &sit_i->sentries[segno];
@@ -2006,6 +2046,9 @@ static int build_segment_manager(struct f2fs_sb_info *sbi)
 	struct f2fs_checkpoint *cp = F2FS_CKPT(sbi);
 	struct f2fs_sm_info *sm_info;
 
+	printf("\n  Inside build_segment_manager");
+	printf("\n ----------------------- ");
+
 	sm_info = malloc(sizeof(struct f2fs_sm_info));
 	if (!sm_info) {
 		MSG(1, "\tError: Malloc failed for build_segment_manager!\n");
@@ -2022,10 +2065,22 @@ static int build_segment_manager(struct f2fs_sb_info *sbi)
 	sm_info->main_segments = get_sb(segment_count_main);
 	sm_info->ssa_blkaddr = get_sb(ssa_blkaddr);
 
-	if (build_sit_info(sbi) || build_curseg(sbi) || build_sit_entries(sbi)) {
+	if (build_sit_info(sbi)) {
 		free(sm_info);
 		return -ENOMEM;
 	}
+	if (build_curseg(sbi)) {
+		free(sm_info);
+		return -ENOMEM;
+	}
+
+	if (build_sit_entries(sbi)) {
+		free(sm_info);
+		return -ENOMEM;
+	}
+
+	printf("\n returning");
+	printf("\n ---------------------\n");
 
 	return 0;
 }
@@ -2803,6 +2858,7 @@ int f2fs_do_mount(struct f2fs_sb_info *sbi)
 		return -1;
 	}
 
+	printf("\n --------------------");
 	if (sanity_check_ckpt(sbi)) {
 		ERR_MSG("Checkpoint is polluted\n");
 		return -1;
@@ -2829,6 +2885,7 @@ int f2fs_do_mount(struct f2fs_sb_info *sbi)
 		}
 	}
 
+	printf("\n about to call tune_sb_features");
 	c.bug_on = 0;
 
 	tune_sb_features(sbi);
@@ -2848,17 +2905,20 @@ int f2fs_do_mount(struct f2fs_sb_info *sbi)
 		ERR_MSG("build_segment_manager failed\n");
 		return -1;
 	}
-
 	if (build_node_manager(sbi)) {
+		printf("\n Err: build_node_manager() failed!");
 		ERR_MSG("build_node_manager failed\n");
 		return -1;
 	}
+
+	printf("\n after build_node_manager()");
 
 	/* Check nat_bits */
 	if (c.func == FSCK && is_set_ckpt_flags(cp, CP_NAT_BITS_FLAG)) {
 		if (check_nat_bits(sbi, sb, cp) && c.fix_on)
 			write_nat_bits(sbi, sb, cp, sbi->cur_cp);
 	}
+	printf("\n returning 0 \n");
 	return 0;
 }
 

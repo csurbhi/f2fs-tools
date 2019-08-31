@@ -2170,6 +2170,8 @@ int check_curseg_offset(struct f2fs_sb_info *sbi, int type, int io_type)
 	else
 		curseg = CUR_GC_SEG_I(sbi, type);
 
+	printf("\n segno: %u, next_blkoff: %u", curseg->segno, curseg->next_blkoff);
+
 	if ((curseg->next_blkoff >> 3) >= SIT_VBLOCK_MAP_SIZE) {
 		ASSERT_MSG("Next block offset:%u is invalid, type:%d",
 			curseg->next_blkoff, type);
@@ -2636,12 +2638,13 @@ int fsck_chk_curseg_info(struct f2fs_sb_info *sbi)
 				curseg = CURSEG_I(sbi, i);
 			else
 				curseg = CUR_GC_SEG_I(sbi, i);
+			printf("\n ****** segno: %u next_blkoff: %u ", curseg->segno, curseg->next_blkoff);
 			se = get_seg_entry(sbi, curseg->segno);
 			sum_blk = curseg->sum_blk;
 
 			if (se->type != i) {
-				ASSERT_MSG("Incorrect curseg [%d]: segno [0x%x] "
-					   "type(SIT) [%d]", i, curseg->segno,
+				ASSERT_MSG("j: %d Incorrect curseg [%d]: segno [%u] "
+					   "type(SIT) [%d]", j, i, curseg->segno,
 					   se->type);
 				if (c.fix_on || c.preen_mode)
 					se->type = i;
@@ -2678,6 +2681,7 @@ int fsck_verify(struct f2fs_sb_info *sbi)
 	struct hard_link_node *node = NULL;
 
 	printf("\n");
+	printf("\n Inside fsck_verify");
 
 	if (c.feature & cpu_to_le32(F2FS_FEATURE_LOST_FOUND)) {
 		for (i = 0; i < fsck->nr_nat_entries; i++)

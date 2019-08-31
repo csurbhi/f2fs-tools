@@ -579,11 +579,17 @@ static void do_fsck(struct f2fs_sb_info *sbi)
 	u32 blk_cnt;
 	errcode_t ret;
 
+	printf("\n Inside do_fsck\n");
+
 	fsck_init(sbi);
 
+	printf("\n After fsck_init() \n");
+
 	print_cp_state(flag);
+	printf("\n After print_cp_state() \n");
 
 	fsck_chk_curseg_info(sbi);
+	return;
 
 	if (!c.fix_on && !c.bug_on) {
 		switch (c.preen_mode) {
@@ -785,9 +791,9 @@ fsck_again:
 		}
 		goto out_err;
 	}
-
 	switch (c.func) {
 	case FSCK:
+		printf("\n about to do fsck ");
 		do_fsck(sbi);
 		break;
 #ifdef WITH_DUMP

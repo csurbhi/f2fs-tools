@@ -312,6 +312,7 @@ int f2fs_set_bit(unsigned int nr, char *addr)
 	mask = 1 << (7 - (nr & 0x07));
 	ret = mask & *addr;
 	*addr |= mask;
+		
 	return ret;
 }
 
