@@ -614,27 +614,38 @@ static int f2fs_init_sit_area(void)
 	return 0 ;
 }
 
-static void write_sit_entry(unsigned int segno, struct sit_entry *se)
+static void write_sit_entry(unsigned int segno, struct f2fs_sit_entry *se)
 {
 	u_int32_t blk_size, seg_size;
 	u_int32_t blkaddr;
 	blk_size = 1 << get_sb(log_blocksize);
-	u_int64_t sit_seg_addr = 0, offset = 0;
+	u_int64_t sit_blk_nr = 0, offset = 0;
 
+	return;
+	char * buf = (char *)malloc(4096);
+	ASSERT(buf != NULL);
 
-	sit_seg_addr = get_sb(sit_blkaddr);
-	sit_seg_addr = sit_seg_addr * blk_size;
+	printf("\n segno: %u", segno);
+
+	sit_blk_nr = get_sb(sit_blkaddr);
+	printf("\n SIT blk addr %lu", sit_blk_nr);
 
 	/* blk offset for this segno */
-	sit_seg_addr += segno / SIT_ENTRY_PER_BLOCK;
+	sit_blk_nr += segno / SIT_ENTRY_PER_BLOCK;
+	printf("\n SIT seg blk addr for segno: %lu is %lu", segno, sit_blk_nr);
 
 	/* offset within that block */
 	offset = segno % SIT_ENTRY_PER_BLOCK;
 
-	/* offset within the device */
-	offset = sit_seg_addr + offset;
+	printf("\n segno: %u, offset is: %lu", segno, offset);
+	dev_read_block(buf, sit_blk_nr);
 
-	dev_write(se, offset, sizeof(struct f2fs_sit_entry));
+	memcpy(buf + offset, se, sizeof(struct f2fs_sit_entry));
+
+	dev_write_block(buf, sit_blk_nr);
+	printf("\n");
+
+	free(buf);
 }
 
 static int f2fs_init_nat_area(void)
@@ -976,6 +987,7 @@ static int f2fs_write_check_point_pack(void)
 	 * write the GC segments SIT to the checkpoint area.
 	 * However, we need to write this out in the SIT area
 	 */
+	memset(&se, 0, sizeof(struct f2fs_sit_entry));
 	segno = cp->cur_gc_data_segno[0];
 	se.vblocks = cpu_to_le16((CURSEG_HOT_DATA << 10));
 	write_sit_entry(segno, &se);

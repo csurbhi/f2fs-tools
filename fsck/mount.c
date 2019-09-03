@@ -340,8 +340,10 @@ void print_ckpt_info(struct f2fs_sb_info *sbi)
 {
 	struct f2fs_checkpoint *cp = F2FS_CKPT(sbi);
 
+	/*
 	if (!c.dbg_lv)
 		return;
+	*/
 
 	printf("\n");
 	printf("+--------------------------------------------------------+\n");
@@ -377,6 +379,26 @@ void print_ckpt_info(struct f2fs_sb_info *sbi)
 	DISP_u32(cp, cur_data_blkoff[0]);
 	DISP_u32(cp, cur_data_blkoff[1]);
 	DISP_u32(cp, cur_data_blkoff[2]);
+
+	/* Adding */
+	DISP_u32(cp, cur_gc_node_segno[0]);
+	DISP_u32(cp, cur_gc_node_segno[1]);
+	DISP_u32(cp, cur_gc_node_segno[2]);
+
+	DISP_u32(cp, cur_gc_node_blkoff[0]);
+	DISP_u32(cp, cur_gc_node_blkoff[1]);
+	DISP_u32(cp, cur_gc_node_blkoff[2]);
+
+
+	DISP_u32(cp, cur_gc_data_segno[0]);
+	DISP_u32(cp, cur_gc_data_segno[1]);
+	DISP_u32(cp, cur_gc_data_segno[2]);
+
+	DISP_u32(cp, cur_gc_data_blkoff[0]);
+	DISP_u32(cp, cur_gc_data_blkoff[1]);
+	DISP_u32(cp, cur_gc_data_blkoff[2]);
+
+	/* Till here */
 
 	DISP_u32(cp, ckpt_flags);
 	DISP_u32(cp, cp_pack_total_block_count);
@@ -2835,6 +2857,8 @@ int f2fs_do_mount(struct f2fs_sb_info *sbi)
 	struct f2fs_super_block *sb = NULL;
 	int ret;
 
+	printf("\n Inside f2fs_do_mount \n");
+
 	sbi->active_logs = NR_CURSEG_TYPE;
 	ret = validate_super_block(sbi, SB0_ADDR);
 	if (ret) {
@@ -2866,6 +2890,8 @@ int f2fs_do_mount(struct f2fs_sb_info *sbi)
 	cp = F2FS_CKPT(sbi);
 
 	print_ckpt_info(sbi);
+	printf("\n----------------\n");
+	return;
 
 	if (c.quota_fix) {
 		if (get_cp(ckpt_flags) & CP_QUOTA_NEED_FSCK_FLAG)

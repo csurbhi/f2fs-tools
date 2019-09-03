@@ -791,6 +791,7 @@ fsck_again:
 		}
 		goto out_err;
 	}
+	return(0);
 	switch (c.func) {
 	case FSCK:
 		printf("\n about to do fsck ");
