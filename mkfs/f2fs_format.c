@@ -335,8 +335,8 @@ static int f2fs_prepare_super_block(void)
 		max_nat_bitmap_size = 0;
 	}
 
-	printf("\n blocks_for_nat: %u, nat_segments: %u", blocks_for_nat, get_sb(segment_count_nat));
-	/*
+		printf("\n blocks_for_nat: %lu, nat_segments: %lu", blocks_for_nat, get_sb(segment_count_nat));
+		/*
 	 * The number of node segments should not be exceeded a "Threshold".
 	 * This number resizes NAT bitmap area in a CP page.
 	 * So the threshold is determined not to overflow one CP page
@@ -385,6 +385,7 @@ static int f2fs_prepare_super_block(void)
 	set_sb(ssa_blkaddr, get_sb(nat_blkaddr) + get_sb(segment_count_nat) *
 			c.blks_per_seg);
 
+	printf("\n blocks_for_nat: %lu, nat_segments: %lu", get_sb(segment_count_nat)*512, get_sb(segment_count_nat));
 	printf("\n SSA blkaddr: %lu", get_sb(ssa_blkaddr));
 
 	total_valid_blks_available = (get_sb(segment_count) -
