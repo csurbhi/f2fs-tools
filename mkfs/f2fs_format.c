@@ -300,7 +300,7 @@ static int f2fs_prepare_super_block(void)
 	set_sb(sit_blkaddr, get_sb(segment0_blkaddr) +
 			get_sb(segment_count_ckpt) * c.blks_per_seg);
 
-	printf("\n sit_blkaddr: %lu, cp_blkaddr: %lu blks_per_seg: %u segment_count_ckpt: %u",
+	MSG(0,"\n sit_blkaddr: %lu, cp_blkaddr: %lu blks_per_seg: %u segment_count_ckpt: %u",
 			get_sb(sit_blkaddr), get_sb(cp_blkaddr), c.blks_per_seg, 
 			get_sb(segment_count_ckpt));
 
@@ -310,7 +310,7 @@ static int f2fs_prepare_super_block(void)
 	sit_segments = SEG_ALIGN(blocks_for_sit);
 
 	set_sb(segment_count_sit, sit_segments * 2);
-	printf("\n blocks_for_sit: %u, sit_segments: %u", blocks_for_sit, get_sb(segment_count_sit));
+	MSG(0,"\n blocks_for_sit: %u, sit_segments: %u", blocks_for_sit, get_sb(segment_count_sit));
 
 	set_sb(nat_blkaddr, get_sb(sit_blkaddr) + get_sb(segment_count_sit) *
 			c.blks_per_seg);
@@ -335,7 +335,7 @@ static int f2fs_prepare_super_block(void)
 		max_nat_bitmap_size = 0;
 	}
 
-		printf("\n blocks_for_nat: %lu, nat_segments: %lu", blocks_for_nat, get_sb(segment_count_nat));
+		MSG(0,"\n blocks_for_nat: %lu, nat_segments: %lu", blocks_for_nat, get_sb(segment_count_nat));
 		/*
 	 * The number of node segments should not be exceeded a "Threshold".
 	 * This number resizes NAT bitmap area in a CP page.
@@ -385,8 +385,8 @@ static int f2fs_prepare_super_block(void)
 	set_sb(ssa_blkaddr, get_sb(nat_blkaddr) + get_sb(segment_count_nat) *
 			c.blks_per_seg);
 
-	printf("\n blocks_for_nat: %lu, nat_segments: %lu", get_sb(segment_count_nat)*512, get_sb(segment_count_nat));
-	printf("\n SSA blkaddr: %lu", get_sb(ssa_blkaddr));
+	MSG(0,"\n blocks_for_nat: %lu, nat_segments: %lu", get_sb(segment_count_nat)*512, get_sb(segment_count_nat));
+	MSG(0,"\n SSA blkaddr: %lu", get_sb(ssa_blkaddr));
 
 	total_valid_blks_available = (get_sb(segment_count) -
 			(get_sb(segment_count_ckpt) +
@@ -399,7 +399,7 @@ static int f2fs_prepare_super_block(void)
 
 	set_sb(segment_count_ssa, SEG_ALIGN(blocks_for_ssa));
 
-	printf("\n SSA: blocks for SSA: %u, segment_count_for_ssa: %u",
+	MSG(0,"\n SSA: blocks for SSA: %u, segment_count_for_ssa: %u",
 			blocks_for_ssa, get_sb(segment_count_ssa));
 
 	total_meta_segments = get_sb(segment_count_ckpt) +
@@ -407,11 +407,11 @@ static int f2fs_prepare_super_block(void)
 		get_sb(segment_count_nat) +
 		get_sb(segment_count_ssa);
 
-	printf("\n get_sb(segment_count_ckpt): %lu ", get_sb(segment_count_ckpt) );
-	printf("\n get_sb(segment_count_sit): %lu", get_sb(segment_count_sit));
-	printf("\n get_sb(segment_count_nat): %lu", get_sb(segment_count_nat));
-	printf("\n get_sb(segment_count_ssa): %lu", get_sb(segment_count_ssa));
-	printf("\n *** Total meta segments: %lu", total_meta_segments);
+	MSG(0,"\n get_sb(segment_count_ckpt): %lu ", get_sb(segment_count_ckpt) );
+	MSG(0,"\n get_sb(segment_count_sit): %lu", get_sb(segment_count_sit));
+	MSG(0,"\n get_sb(segment_count_nat): %lu", get_sb(segment_count_nat));
+	MSG(0,"\n get_sb(segment_count_ssa): %lu", get_sb(segment_count_ssa));
+	MSG(0,"\n *** Total meta segments: %lu", total_meta_segments);
 	diff = total_meta_segments % (c.segs_per_zone);
 	if (diff)
 		set_sb(segment_count_ssa, get_sb(segment_count_ssa) +
@@ -423,7 +423,7 @@ static int f2fs_prepare_super_block(void)
 	set_sb(main_blkaddr, get_sb(segment0_blkaddr) + total_meta_zones *
 				c.segs_per_zone * c.blks_per_seg);
 
-	printf("\n main_blkaddr: %lu", get_sb(main_blkaddr));
+	MSG(0,"\n main_blkaddr: %lu", get_sb(main_blkaddr));
 	if (c.zoned_mode) {
 		/*
 		 * Make sure there is enough randomly writeable
@@ -599,7 +599,7 @@ static int f2fs_init_sit_area(void)
 	sit_seg_addr = get_sb(sit_blkaddr);
 	sit_seg_addr *= blk_size;
 
-	printf("\n SIT seg: %d blk addr: %lu", sit_seg_addr, get_sb(sit_blkaddr));
+	MSG(0,"\n SIT seg: %d blk addr: %lu", sit_seg_addr, get_sb(sit_blkaddr));
 	DBG(1, "\tFilling sit area at offset 0x%08"PRIx64"\n", sit_seg_addr);
 	for (index = 0; index < (get_sb(segment_count_sit)); index++) {
 		if (dev_fill(zero_buf, sit_seg_addr, seg_size)) {
@@ -622,29 +622,29 @@ static void write_sit_entry(unsigned int segno, struct f2fs_sit_entry *se)
 	blk_size = 1 << get_sb(log_blocksize);
 	u_int64_t sit_blk_nr = 0, offset = 0;
 
-	return;
 	char * buf = (char *)malloc(4096);
 	ASSERT(buf != NULL);
 
-	printf("\n segno: %u", segno);
+	MSG(0,"\n segno: %u", segno);
 
 	sit_blk_nr = get_sb(sit_blkaddr);
-	printf("\n SIT blk addr %lu", sit_blk_nr);
+	MSG(0,"\n **************** SIT blk addr %lu", sit_blk_nr);
 
 	/* blk offset for this segno */
 	sit_blk_nr += segno / SIT_ENTRY_PER_BLOCK;
-	printf("\n SIT seg blk addr for segno: %lu is %lu", segno, sit_blk_nr);
+	MSG(0,"\n SIT seg blk addr for segno: %lu is %lu", segno, sit_blk_nr);
 
 	/* offset within that block */
 	offset = segno % SIT_ENTRY_PER_BLOCK;
 
-	printf("\n segno: %u, offset is: %lu", segno, offset);
+	MSG(0,"\n segno: %u, offset is: %lu", segno, offset);
 	dev_read_block(buf, sit_blk_nr);
 
+	offset = offset * sizeof(struct f2fs_sit_entry);
 	memcpy(buf + offset, se, sizeof(struct f2fs_sit_entry));
 
 	dev_write_block(buf, sit_blk_nr);
-	printf("\n");
+	MSG(0,"\n");
 
 	free(buf);
 }
@@ -669,7 +669,7 @@ static int f2fs_init_nat_area(void)
 	nat_seg_addr *= blk_size;
 
 	DBG(1, "\tFilling nat area at offset 0x%08"PRIx64"\n", nat_seg_addr);
-	printf("\n NAT seg: %d blk addr: %lu", nat_seg_addr, get_sb(nat_blkaddr));
+	MSG(0,"\n NAT seg: %d blk addr: %lu", nat_seg_addr, get_sb(nat_blkaddr));
 	for (index = 0; index < get_sb(segment_count_nat) / 2; index++) {
 		if (dev_fill(nat_buf, nat_seg_addr, seg_size)) {
 			MSG(1, "\tError: While zeroing out the nat area "
@@ -831,7 +831,7 @@ static int f2fs_write_check_point_pack(void)
 
 	DBG(1, "\tWriting main segments, cp at offset 0x%08"PRIx64"\n",
 						cp_seg_blk);
-	printf("\n Writing cp at blk: %lu ", cp_seg_blk);
+	MSG(0,"\n Writing cp at blk: %lu ", cp_seg_blk);
 	if (dev_write_block(cp, cp_seg_blk)) {
 		MSG(1, "\tError: While writing the cp to disk!!!\n");
 		goto free_cp_payload;
@@ -898,21 +898,21 @@ static int f2fs_write_check_point_pack(void)
 				c.blks_per_seg + i);
 	}
 
-	printf("\n journal->n_nats: %d", journal->n_nats);
+	MSG(0,"\n journal->n_nats: %d", journal->n_nats);
 	memcpy(sum_compact_p, &journal->n_nats, SUM_JOURNAL_SIZE);
 	sum_compact_p += SUM_JOURNAL_SIZE;
 
 	memset(sum, 0, sizeof(struct f2fs_summary_block));
 	/* inode sit for root */
 	journal->n_sits = cpu_to_le16(6); /* adding 6 for the GC cur segs */
-	printf("\n journal->n_sits: %d", journal->n_sits);
+	MSG(0,"\n journal->n_sits: %d", journal->n_sits);
 	journal->sit_j.entries[0].segno = cp->cur_node_segno[0];
 	journal->sit_j.entries[0].se.vblocks =
 				cpu_to_le16((CURSEG_HOT_NODE << 10) |
 						(1 + c.quota_inum + c.lpf_inum));
-	printf("\n HOT NODE: 1 + c.quota_inum + c.lpf_inum: %d", 1 + c.quota_inum + c.lpf_inum);
+	MSG(0,"\n HOT NODE: 1 + c.quota_inum + c.lpf_inum: %d", 1 + c.quota_inum + c.lpf_inum);
 	f2fs_set_bit(0, (char *)journal->sit_j.entries[0].se.valid_map);
-	printf("\n journal->sit_j.entries[0].se.valid_map: %u", journal->sit_j.entries[0].se.valid_map[0]);
+	MSG(0,"\n journal->sit_j.entries[0].se.valid_map: %u", journal->sit_j.entries[0].se.valid_map[0]);
 	for (i = 1; i <= c.quota_inum; i++)
 		f2fs_set_bit(i, (char *)journal->sit_j.entries[0].se.valid_map);
 	if (c.lpf_inum)
@@ -947,10 +947,10 @@ static int f2fs_write_check_point_pack(void)
 	journal->sit_j.entries[3].se.vblocks =
 				cpu_to_le16((CURSEG_HOT_DATA << 10) |
 						(1 + c.quota_dnum + c.lpf_dnum));
-	printf("\n HOT DATA: SIT: 1 + c.quota_dnum + c.lpf_dnum: %d", 1 + c.quota_dnum + c.lpf_dnum);
+	MSG(0,"\n HOT DATA: SIT: 1 + c.quota_dnum + c.lpf_dnum: %d", 1 + c.quota_dnum + c.lpf_dnum);
 	f2fs_set_bit(0, (char *)journal->sit_j.entries[3].se.valid_map);
-	printf("\n journal->sit_j.entries[3].se.valid_map: %u", journal->sit_j.entries[3].se.valid_map[0]);
-	printf("\n");
+	MSG(0,"\n journal->sit_j.entries[3].se.valid_map: %u", journal->sit_j.entries[3].se.valid_map[0]);
+	MSG(0,"\n");
 
 	for (i = 1; i <= c.quota_dnum; i++)
 		f2fs_set_bit(i, (char *)journal->sit_j.entries[3].se.valid_map);
@@ -991,6 +991,7 @@ static int f2fs_write_check_point_pack(void)
 	memset(&se, 0, sizeof(struct f2fs_sit_entry));
 	segno = cp->cur_gc_data_segno[0];
 	se.vblocks = cpu_to_le16((CURSEG_HOT_DATA << 10));
+	MSG(0,"\n$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
 	write_sit_entry(segno, &se);
 
 	segno = cp->cur_gc_data_segno[1];
