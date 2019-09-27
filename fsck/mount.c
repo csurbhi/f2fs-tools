@@ -2039,6 +2039,9 @@ static int build_sit_entries(struct f2fs_sb_info *sbi)
 		return -ENOMEM;
 	}
 
+	get_current_sit_page(sbi, 3331072, sit_blk);
+	MSG(0, "offset in the page: %u", SIT_ENTRY_OFFSET(sit_i, 3331072));
+
 	for (segno = 0; segno < TOTAL_SEGS(sbi); segno++) {
 		se = &sit_i->sentries[segno];
 
@@ -2891,7 +2894,6 @@ int f2fs_do_mount(struct f2fs_sb_info *sbi)
 
 	print_ckpt_info(sbi);
 	printf("\n----------------\n");
-	return;
 
 	if (c.quota_fix) {
 		if (get_cp(ckpt_flags) & CP_QUOTA_NEED_FSCK_FLAG)
@@ -2911,7 +2913,6 @@ int f2fs_do_mount(struct f2fs_sb_info *sbi)
 		}
 	}
 
-	printf("\n about to call tune_sb_features");
 	c.bug_on = 0;
 
 	tune_sb_features(sbi);

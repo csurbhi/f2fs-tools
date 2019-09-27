@@ -589,7 +589,7 @@ static void do_fsck(struct f2fs_sb_info *sbi)
 	printf("\n After print_cp_state() \n");
 
 	fsck_chk_curseg_info(sbi);
-	return;
+	MSG(1, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
 	if (!c.fix_on && !c.bug_on) {
 		switch (c.preen_mode) {
@@ -623,6 +623,7 @@ static void do_fsck(struct f2fs_sb_info *sbi)
 	}
 
 	fsck_chk_checkpoint(sbi);
+	MSG(0, "checkpoint check done! ");
 
 	fsck_chk_quota_node(sbi);
 
@@ -791,10 +792,10 @@ fsck_again:
 		}
 		goto out_err;
 	}
-	return(0);
+	MSG(0, "\n about to do fsck ");
+	return 0;
 	switch (c.func) {
 	case FSCK:
-		printf("\n about to do fsck ");
 		do_fsck(sbi);
 		break;
 #ifdef WITH_DUMP
