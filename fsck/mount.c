@@ -1764,7 +1764,7 @@ int get_sum_entry(struct f2fs_sb_info *sbi, u32 blk_addr,
 	return type;
 }
 
-static void get_nat_entry(struct f2fs_sb_info *sbi, nid_t nid,
+void get_nat_entry(struct f2fs_sb_info *sbi, nid_t nid,
 				struct f2fs_nat_entry *raw_nat)
 {
 	struct f2fs_nat_block *nat_block;

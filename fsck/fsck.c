@@ -521,12 +521,15 @@ int fsck_chk_node_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 {
 	struct node_info ni;
 	struct f2fs_node *node_blk = NULL;
+	int ret = 0;
 
 	node_blk = (struct f2fs_node *)calloc(BLOCK_SZ, 1);
 	ASSERT(node_blk != NULL);
 
-	if (sanity_check_nid(sbi, nid, node_blk, ftype, ntype, &ni))
+	if (sanity_check_nid(sbi, nid, node_blk, ftype, ntype, &ni)) {
+		ret = -EINVAL;
 		goto err;
+	}
 
 	if (ntype == TYPE_INODE) {
 		struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
@@ -557,11 +560,9 @@ int fsck_chk_node_blk(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
 			ASSERT(0);
 		}
 	}
-	free(node_blk);
-	return 0;
 err:
 	free(node_blk);
-	return -EINVAL;
+	return ret;
 }
 
 static inline void get_extent_info(struct extent_info *ext,
@@ -1582,7 +1583,7 @@ int fsck_chk_dentry_blk(struct f2fs_sb_info *sbi, u32 blk_addr,
 	ASSERT(ret >= 0);
 
 	fsck->dentry_depth++;
-	dentries = __chk_dentries(sbi, child,
+		dentries = __chk_dentries(sbi, child,
 			de_blk->dentry_bitmap,
 			de_blk->dentry, de_blk->filename,
 			NR_DENTRY_IN_BLOCK, last_blk, enc_name);
