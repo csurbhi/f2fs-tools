@@ -2957,19 +2957,23 @@ void f2fs_do_umount(struct f2fs_sb_info *sbi)
 	unsigned int i;
 
 	/* free nm_info */
+	
 	if (c.func == SLOAD || c.func == FSCK)
 		free(nm_i->nid_bitmap);
 	free(nm_i->nat_bitmap);
 	free(sbi->nm_info);
-
+	
 	/* free sit_info */
+		
+	/*
 	for (i = 0; i < TOTAL_SEGS(sbi); i++)
 		free(sit_i->sentries[i].cur_valid_map);
-
+	*/
 	free(sit_i->sit_bitmap);
 	free(sm_i->sit_info);
 
 	/* free sm_info */
+	
 	for (i = 0; i < NR_CURSEG_TYPE; i++)
 		free(sm_i->curseg_array[i].sum_blk);
 
@@ -2978,6 +2982,7 @@ void f2fs_do_umount(struct f2fs_sb_info *sbi)
 
 	free(sbi->ckpt);
 	free(sbi->raw_super);
+	
 }
 
 #ifdef WITH_ANDROID
