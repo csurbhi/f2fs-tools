@@ -1,7 +1,7 @@
 ## Makefile.am
 
 AM_CPPFLAGS = ${libuuid_CFLAGS} -I$(top_srcdir)/include  
-AM_CFLAGS = -Wall #-Iinclude $(top_srcdir)/fsck/
+AM_CFLAGS = -Wall -g 
 sbin_PROGRAMS = dumpinodes.f2fs
 noinst_HEADERS = $(top_srcdir)/fsck/common.h $(top_srcdir)/fsck/dict.h $(top_srcdir)/fsck/dqblk_v2.h $(top_srcdir)/fsck/f2fs.h $(top_srcdir)/fsck/fsck.h $(top_srcdir)/fsck/node.h $(top_srcdir)/fsck/quotaio.h $(top_srcdir)/fsck/quotaio_tree.h $(top_srcdir)/fsck/quotaio_v2.h $(top_srcdir)/fsck/xattr.h
 include_HEADERS = $(top_srcdir)/include/quota.h
