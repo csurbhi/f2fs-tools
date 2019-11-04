@@ -42,7 +42,7 @@ static char * segbitmap;
 
 static void process_inode_num(struct f2fs_sb_info *sbi, nid_t nid,
                 int ftype);
-static void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t blkaddr);
+static void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t blkaddr, u8 is_enc);
 
 
 void get_node_info_nat(struct f2fs_sb_info *sbi, nid_t nid, struct node_info *ni)
@@ -99,7 +99,7 @@ void process_direct_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, int
 		}
 		else if (action == F2FS_FT_DIR) {
 			/* assert that the inode is a DIR */
-			process_dentries_in_block(sbi, blkaddr);
+			process_dentries_in_block(sbi, blkaddr, file_is_encrypt(&node->i));
 		} else
 			ASSERT(1);
 	}
@@ -293,17 +293,15 @@ struct f2fs_inode * read_inode(struct f2fs_sb_info *sbi, nid_t nid)
 void process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode *inode,
 			uint *min_segid, uint *max_segid)
 {
-	struct node_info ni;
 	unsigned int i = 0;
 	block_t blknr;
-
-	printf("\n Blk number of the inode: %x ", ni.blk_addr);
 
 	print_extra_inode_info(inode, 1);
 
 	/* If inline flag is set, do not show blk addresses*/
 	if ((inode->i_inline && F2FS_INLINE_DATA) || 
 			(inode->i_inline && F2FS_INLINE_DENTRY)) {
+		/* TODO: process inline dentries */
 		return;
 	}
 
@@ -316,58 +314,92 @@ void process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode *
 		DISP_u32(inode, i_addr[i]);	/* Pointers to data blocks */
 	}
 
+	process_blk(sbi, inode->i_nid[0], DIRECT, PRINT, min_segid, max_segid);
 	process_blk(sbi, inode->i_nid[1], DIRECT, PRINT, min_segid, max_segid);
-	process_blk(sbi, inode->i_nid[2], DIRECT, PRINT, min_segid, max_segid);
+	process_blk(sbi, inode->i_nid[2], INDIRECT, PRINT, min_segid, max_segid);
 	process_blk(sbi, inode->i_nid[3], INDIRECT, PRINT, min_segid, max_segid);
-	/* process_blk(sbi, inode->i_nid[4], INDIRECT, PRINT, min_segid, max_segid);
-	process_blk(sbi, inode->i_nid[5], DINDIRECT, PRINT, min_segid, max_segid); */
+	process_blk(sbi, inode->i_nid[4], DINDIRECT, PRINT, min_segid, max_segid);
 	printf("\n inode nr: %x, min_seg: %u, max_seg: %u", nid, *min_segid, *max_segid);
 	printf("\n");
+}
+
+void process_dentries(struct f2fs_sb_info * sbi, u8 *bitmap, __u8 (*filenames)[F2FS_SLOT_LEN],
+			struct f2fs_dir_entry *dentry, u8 is_enc,
+			int max)
+{
+	int i;
+	u16 name_len;
+	u8 *name;
+	char en[F2FS_PRINT_NAMELEN];
+	nid_t nid;
+	int ftype;
+
+	ASSERT(bitmap != NULL);
+
+	for (i = 0; i < max; i++) {
+		if (!test_bit_le(i, bitmap))
+			continue;
+		name_len = le16_to_cpu(dentry[i].name_len);
+		if (!name_len)
+			continue;
+		name = calloc(name_len + 1, 1);
+		ASSERT(name);
+		memcpy(name, filenames[i], name_len);
+		printf("\t %s ", name); 
+		ftype = dentry[i].file_type;
+		if (ftype == F2FS_FT_DIR) {
+			if ((name[0] == '.' && name_len == 1) ||
+				(name[0] == '.' && name[1] == '.' &&
+					name_len == 2)) {
+				continue;
+			}
+		}
+		printf("\n nid: %d ", nid);
+		printf("\n");
+		nid = le32_to_cpu(dentry[i].ino);
+		process_inode_num(sbi, nid, ftype);
+	}
 }
 
 /* 
  * TODO: You do not want to process the dentries belonging to . and ..
  */
-static void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t blkaddr)
+static inline void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t blkaddr, u8 is_enc)
 {
 	struct f2fs_dentry_block *de_blk;
-	int ret, i, ftype;
-	nid_t nid;
-	struct f2fs_dir_entry *dentry;
-	block_t blk_addr;
-	u8 *bitmap;
-	__u8 (*filenames)[F2FS_SLOT_LEN];
-	u16 name_len;
-	u8 *name;
-	char en[F2FS_PRINT_NAMELEN];
+	int ret;
 
 	printf("\n Hellooooo!!");
 	de_blk = (struct f2fs_dentry_block *)calloc(BLOCK_SZ, 1);
 	ASSERT(de_blk != NULL);
-	ret = dev_read_block(de_blk, blk_addr);
+	ret = dev_read_block(de_blk, blkaddr);
 	ASSERT(ret >= 0);
-	bitmap = de_blk->dentry_bitmap;
-	filenames = de_blk->filename;
-	dentry = de_blk->dentry;
-	for (i = 0; i < NR_DENTRY_IN_BLOCK; i++) {
-		if (test_bit_le(i, bitmap) == 0)
-			continue;
-		name_len = le16_to_cpu(dentry[i].name_len);
-		name = calloc(name_len + 1, 1);
-		ASSERT(name);
-		memcpy(name, filenames[i], name_len);
-		if ((name[0] == '.' && name_len == 1) ||
-                	(name[0] == '.' && name[1] == '.' &&
-                        	name_len == 2)) {
-			continue;
-		}
-		nid = le32_to_cpu(dentry[i].ino);
-		ftype = dentry[i].file_type;
-		printf("\n %s , name");
-		pretty_print_filename(name, name_len, en, 0);
-		process_inode_num(sbi, nid, ftype);
-	}
+
+	printf("\n NR_DENTRY_IN_BLOCK: %d", NR_DENTRY_IN_BLOCK);
+	printf("\n");
+	process_dentries(sbi, de_blk->dentry_bitmap, de_blk->filename,
+				de_blk->dentry, is_enc, NR_DENTRY_IN_BLOCK);
 }
+
+#define MAX_INLINE_DATA_I(inode) (sizeof(__le32) *                         \
+                                (DEF_ADDRS_PER_INODE -                  \
+                                get_inline_xattr_addrs(inode) -      \
+                                __get_extra_isize(inode) -                 \
+                                DEF_INLINE_RESERVED_SIZE))
+
+#define NR_INLINE_DENTRY_I(inode)  (MAX_INLINE_DATA_I(inode) * BITS_PER_BYTE / \
+                                ((SIZE_OF_DIR_ENTRY + F2FS_SLOT_LEN) * \
+                                BITS_PER_BYTE + 1))
+
+#define INLINE_DENTRY_BITMAP_SIZE_I(inode) ((NR_INLINE_DENTRY_I(inode) + \
+                                        BITS_PER_BYTE - 1) / BITS_PER_BYTE)
+#define INLINE_RESERVED_SIZE_I(inode)      (MAX_INLINE_DATA_I(inode) - \
+                                ((SIZE_OF_DIR_ENTRY + F2FS_SLOT_LEN) * \
+                                NR_INLINE_DENTRY_I(inode) + \
+                                INLINE_DENTRY_BITMAP_SIZE_I(inode)))
+
+
+
 
 /* 
  * TODO: dentries can be inline as well
@@ -375,22 +407,52 @@ static void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t blkaddr)
 void process_all_dentries(struct f2fs_sb_info *sbi, struct f2fs_inode *inode)
 {
 	block_t d_addr;
-	int i;
+	int i, ofs;
 
 	printf("\n addres_per_inode: %u", ADDRS_PER_INODE(inode));
 	
-	/*
-	 * TODO: using ofs. Check fsck_chk_inode_blk()
-	ofs = get_extra_isize(node_blk);
-	*/
-	for (i = 0; i < ADDRS_PER_INODE(inode); i++) {
+	ofs = __get_extra_isize(inode);
+	if(inode->i_inline & F2FS_INLINE_DENTRY) {
+		printf("\n Dir is inlined!");
+		/* TODO: Process inlined directory */
+		void *inline_dentry;
+		struct f2fs_dentry_ptr d;
+		int entry_cnt, bitmap_size, reserved_size;
+
+		inline_dentry = (void *)(&inode->i_addr[ofs + DEF_INLINE_RESERVED_SIZE]);
+		ASSERT(inline_dentry != NULL);
+		printf("\n ofs + DEF_INLINE_RESERVED_SIZE: %d", DEF_INLINE_RESERVED_SIZE);
+		printf("\n inode->i_addr[1]: %x", inode->i_addr[1]);
+		entry_cnt = NR_INLINE_DENTRY_I(inode);
+		bitmap_size = INLINE_DENTRY_BITMAP_SIZE_I(inode);
+		reserved_size = INLINE_RESERVED_SIZE_I(inode);
+
+		d.max = entry_cnt;
+		printf("\n d.max: %d ", d.max);
+		printf("\n ");
+		d.nr_bitmap = bitmap_size;
+		d.bitmap = (u8 *)inline_dentry;
+		printf("\n bitmap_size: %d, reserved_size: %d \n", bitmap_size, reserved_size);
+		printf("\n inline_dentry: %x", inline_dentry);
+		d.dentry = (struct f2fs_dir_entry *)
+                                ((char *)inline_dentry + bitmap_size + reserved_size);
+		d.filename = (__u8 (*)[F2FS_SLOT_LEN])((char *) inline_dentry +
+                                bitmap_size + reserved_size +
+                                SIZE_OF_DIR_ENTRY * entry_cnt);
+		process_dentries(sbi, d.bitmap, d.filename, d.dentry, file_is_encrypt(inode), d.max);
+		return;
+	}
+	printf("\n Directory is not inlined ");
+	printf("\n ofs: %d ", ofs);
+	for (i = ofs; i < ADDRS_PER_INODE(inode); i++) {
 		d_addr = le32_to_cpu(inode->i_addr[i]);
 		if (d_addr == NULL_ADDR)
 			continue;
 		if (d_addr == NEW_ADDR)
 			continue;
+		printf(" \n %d %u - will process dentries here", i , d_addr);
 
-		process_dentries_in_block(sbi, d_addr);
+		process_dentries_in_block(sbi, d_addr, file_is_encrypt(inode));
 	}
 
 	/* The following function will call process_dentry */
@@ -526,7 +588,7 @@ int main(int argc, char **argv)
 		MSG(0, "Malloc error for sbi");
 		exit(-1);
 	}
-	memset(sbi, 0, sizeof(sbi));
+	memset(sbi, 0, sizeof(struct f2fs_sb_info));
 	c.auto_fix = 0;
 	c.preen_mode = 0;
 	c.fix_on = 0;

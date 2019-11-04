@@ -236,6 +236,7 @@ static inline struct sit_info *SIT_I(struct f2fs_sb_info *sbi)
 static inline void *inline_data_addr(struct f2fs_node *node_blk)
 {
 	int ofs = get_extra_isize(node_blk) + DEF_INLINE_RESERVED_SIZE;
+	printf("\n *** ofs: %d", ofs);
 
 	return (void *)&(node_blk->i.i_addr[ofs]);
 }

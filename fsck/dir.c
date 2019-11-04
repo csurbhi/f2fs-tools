@@ -52,6 +52,7 @@ void make_dentry_ptr(struct f2fs_dentry_ptr *d, struct f2fs_node *node_blk,
 		d->max = entry_cnt;
 		d->nr_bitmap = bitmap_size;
 		d->bitmap = (u8 *)src;
+		printf("\n *bitmap: %x \n", src);
 		d->dentry = (struct f2fs_dir_entry *)
 				((char *)src + bitmap_size + reserved_size);
 		d->filename = (__u8 (*)[F2FS_SLOT_LEN])((char *)src +
