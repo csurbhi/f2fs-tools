@@ -604,7 +604,7 @@ static int has_dirent(u32 blk_addr, int is_inline, int *enc_name)
 	return is_dentry;
 }
 
-static void dump_dirent(u32 blk_addr, int is_inline, int enc_name)
+void dump_dirent(u32 blk_addr, int is_inline, int enc_name)
 {
 	struct f2fs_dentry_ptr d;
 	void *inline_dentry, *blk;
@@ -642,6 +642,7 @@ static void dump_dirent(u32 blk_addr, int is_inline, int enc_name)
 			i++;
 			continue;
 		}
+		printf("\n next iteration!");
 
 		name_len = le16_to_cpu(de->name_len);
 		enc = enc_name;
@@ -655,8 +656,9 @@ static void dump_dirent(u32 blk_addr, int is_inline, int enc_name)
 		}
 
 		pretty_print_filename(d.filename[i], name_len, en, enc);
+		printf("\n name: %s", d.filename[i]);
 
-		DBG(1, "bitmap pos[0x%x] name[%s] len[0x%x] hash[0x%x] ino[0x%x] type[0x%x]\n",
+		MSG(1, "bitmap pos[0x%x] name[%s] len[0x%x] hash[0x%x] ino[0x%x] type[0x%x]\n",
 				i, en,
 				name_len,
 				le32_to_cpu(de->hash_code),

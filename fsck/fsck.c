@@ -1245,7 +1245,7 @@ static void print_dentry(__u32 depth, __u8 *name,
 
 	pretty_print_filename(name, name_len, new, enc_name);
 
-	printf("%c-- %s <ino = 0x%x>, <encrypted (%d)>\n",
+	printf("* %c-- %s <ino = 0x%x>, <encrypted (%d)>\n",
 			last_de ? '`' : '|',
 			new, le32_to_cpu(dentry[idx].ino),
 			enc_name);
@@ -1380,6 +1380,8 @@ static int __chk_dentries(struct f2fs_sb_info *sbi, struct child_info *child,
 	int fixed = 0;
 	int i, slots;
 
+	printf("\n max: %d ", max);
+
 	/* readahead inode blocks */
 	for (i = 0; i < max; i++) {
 		u32 ino;
@@ -1388,6 +1390,7 @@ static int __chk_dentries(struct f2fs_sb_info *sbi, struct child_info *child,
 			continue;
 
 		ino = le32_to_cpu(dentry[i].ino);
+		printf("\n bit set for: %d , ino: %u ", i, ino);
 
 		if (IS_VALID_NID(sbi, ino)) {
 			struct node_info ni;
@@ -1407,6 +1410,7 @@ static int __chk_dentries(struct f2fs_sb_info *sbi, struct child_info *child,
 			i++;
 			continue;
 		}
+		printf("\n bit set for: %d ", i);
 		if (!IS_VALID_NID(sbi, le32_to_cpu(dentry[i].ino))) {
 			ASSERT_MSG("Bad dentry 0x%x with invalid NID/ino 0x%x",
 				    i, le32_to_cpu(dentry[i].ino));
@@ -1549,6 +1553,7 @@ int fsck_chk_inline_dentries(struct f2fs_sb_info *sbi,
 
 	inline_dentry = inline_data_addr(node_blk);
 	ASSERT(inline_dentry != NULL);
+	printf("\n inline_dentry: %x \n", inline_dentry);
 
 	make_dentry_ptr(&d, node_blk, inline_dentry, 2);
 
@@ -1581,6 +1586,8 @@ int fsck_chk_dentry_blk(struct f2fs_sb_info *sbi, u32 blk_addr,
 
 	ret = dev_read_block(de_blk, blk_addr);
 	ASSERT(ret >= 0);
+
+	printf("\n Read blk:%u", blk_addr);
 
 	fsck->dentry_depth++;
 		dentries = __chk_dentries(sbi, child,
@@ -1640,6 +1647,7 @@ int fsck_chk_data_blk(struct f2fs_sb_info *sbi, u32 blk_addr,
 
 	if (ftype == F2FS_FT_DIR) {
 		f2fs_set_main_bitmap(sbi, blk_addr, CURSEG_HOT_DATA);
+		printf("\n blk_addr: %u", blk_addr);
 		return fsck_chk_dentry_blk(sbi, blk_addr, child,
 						last_blk, enc_name);
 	} else {

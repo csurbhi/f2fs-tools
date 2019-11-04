@@ -752,7 +752,7 @@ int f2fs_devs_are_umounted(void)
 {
 	int i;
 
-	printf("\n c.ndevs: %d", c.ndevs");
+	printf("\n c.ndevs: %d", c.ndevs);
 
 	for (i = 0; i < c.ndevs; i++)
 		if (f2fs_dev_is_umounted((char *)c.devices[i].path))
