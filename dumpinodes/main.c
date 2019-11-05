@@ -82,8 +82,8 @@ void set_blknr(block_t blknr)
 }
 
 
-void process_direct_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, int action,
-				uint *min_segid, uint *max_segid)
+void process_direct_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node,
+		int *seq_count, int *total_blks, block_t *prev_nr)
 {
 	int idx;
 	block_t blkaddr;
@@ -92,22 +92,18 @@ void process_direct_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, int
 		blkaddr = le32_to_cpu(node->dn.addr[idx]);
 		if (blkaddr == 0)
 			continue;
-		if (action == PRINT) {
-			set_min_max_segid(blkaddr, min_segid, max_segid);
-			set_blknr(blkaddr);
-			printf("\t %x ", blkaddr);
-		}
-		else if (action == F2FS_FT_DIR) {
+		if (*prev_nr + 1 == blkaddr)
+			*seq_count++;
+		*total_blks++;
+		*prev_nr = blkaddr;	
 			/* assert that the inode is a DIR */
-			process_dentries_in_block(sbi, blkaddr, file_is_encrypt(&node->i));
-		} else
-			ASSERT(1);
+		process_dentries_in_block(sbi, blkaddr, file_is_encrypt(&node->i));
 	}
 	printf("\n");
 }
 
-void process_indirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, int action,
-				uint *min_segid, uint *max_segid)
+void process_indirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node,
+		int *seq_count, int *total_blks, block_t *prev_nr)
 {
 	int idx, ret;
 	nid_t nid;
@@ -122,20 +118,15 @@ void process_indirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, i
 		if (nid == 0)
 			continue;
 		get_node_info_nat(sbi, nid, &ni);
-		if (action == PRINT) {
-			set_blknr(ni.blk_addr);
-			set_min_max_segid(ni.blk_addr, min_segid, max_segid);
-			printf("\n \t %x, that points to: \n", ni.blk_addr);
-		}
 		ret = dev_read_block(dnode, ni.blk_addr);
 		ASSERT(ret >= 0);
-		//process_direct_blocks(sbi, dnode, action, min_segid, max_segid);
+		process_direct_blocks(sbi, dnode, seq_count, total_blks, prev_nr);
 	}
 	free(dnode);
 }
 
-void process_dindirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *dindnode, int action,
-				uint *min_segid, uint *max_segid)
+void process_dindirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *dindnode,
+		int *seq_count, int *total_blks, block_t *prev_nr)
 {
 	int idx, ret;
 	nid_t nid;
@@ -150,14 +141,9 @@ void process_dindirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *dindno
 		if (nid == 0)
 			continue;
 		get_node_info_nat(sbi, nid, &ni);
-		if (action == PRINT) {
-			set_blknr(ni.blk_addr);
-			set_min_max_segid(ni.blk_addr, min_segid, max_segid);
-			printf("\n \t %x, that points to: \n", ni.blk_addr);
-		}
 		ret = dev_read_block(indnode, ni.blk_addr);
 		ASSERT(ret >= 0);
-		process_indirect_blocks(sbi, indnode, action, min_segid, max_segid);
+		process_indirect_blocks(sbi, indnode, seq_count, total_blks, prev_nr);
 	}
 	free(indnode);
 }
@@ -169,8 +155,8 @@ enum block_type {
 };
 
 
-void process_blk(struct f2fs_sb_info *sbi, nid_t nid, int level, int action,
-			uint *min_segid, uint *max_segid)
+void process_blk(struct f2fs_sb_info *sbi, nid_t nid, int level,
+		int *seq_count, int *total_blks, block_t *prev_nr)
 {
 	struct f2fs_node *node;
 	struct node_info ni;
@@ -182,22 +168,17 @@ void process_blk(struct f2fs_sb_info *sbi, nid_t nid, int level, int action,
 	node = (struct f2fs_node *)calloc(BLOCK_SZ, 1);
 	ASSERT(node != NULL);
 	get_node_info_nat(sbi, nid, &ni);
-	if (action == PRINT) {
-		set_blknr(ni.blk_addr);
-		set_min_max_segid(ni.blk_addr, min_segid, max_segid);
-		printf(" %x points to: \n", ni.blk_addr);
-	}
 	ret = dev_read_block(node, ni.blk_addr);
 	ASSERT(ret >= 0);
 	switch(level) {
 		case DIRECT:
-			process_direct_blocks(sbi, node, action, min_segid, max_segid);
+			process_direct_blocks(sbi, node, seq_count, total_blks, prev_nr);
 			break;
 		case INDIRECT:
-			process_indirect_blocks(sbi, node, action, min_segid, max_segid);
+			process_indirect_blocks(sbi, node, seq_count, total_blks, prev_nr);
 			break;
 		case DINDIRECT:
-			process_dindirect_blocks(sbi, node, action, min_segid, max_segid);
+			process_dindirect_blocks(sbi, node, seq_count, total_blks, prev_nr);
 			break;
 		default:
 			ASSERT(1);
@@ -290,11 +271,13 @@ struct f2fs_inode * read_inode(struct f2fs_sb_info *sbi, nid_t nid)
 }
 
 
-void process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode *inode,
-			uint *min_segid, uint *max_segid)
+void process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode *inode)
 {
 	unsigned int i = 0;
-	block_t blknr;
+	block_t blknr, prevnr;
+	int total_blks = 0;
+	int seq_count = 0;
+	block_t prev_nr = 0;
 
 	print_extra_inode_info(inode, 1);
 
@@ -302,24 +285,28 @@ void process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode *
 	if ((inode->i_inline && F2FS_INLINE_DATA) || 
 			(inode->i_inline && F2FS_INLINE_DENTRY)) {
 		/* TODO: process inline dentries */
+		ASSERT(1);
 		return;
 	}
 
-	for (i = 0; i < ADDRS_PER_INODE(inode); i++) {
+	prevnr = le32_to_cpu(inode->i_addr[0]);
+	for (i = 1; i < ADDRS_PER_INODE(inode); i++) {
 		blknr = le32_to_cpu(inode->i_addr[i]);
 		if (blknr == 0)
 			continue;
-		set_blknr(blknr);
-		set_min_max_segid(blknr, min_segid, max_segid);
 		DISP_u32(inode, i_addr[i]);	/* Pointers to data blocks */
+		if (prevnr+1 == blknr)
+			seq_count++;
+		prev_nr = blknr;
+		total_blks++;
 	}
 
-	process_blk(sbi, inode->i_nid[0], DIRECT, PRINT, min_segid, max_segid);
-	process_blk(sbi, inode->i_nid[1], DIRECT, PRINT, min_segid, max_segid);
-	process_blk(sbi, inode->i_nid[2], INDIRECT, PRINT, min_segid, max_segid);
-	process_blk(sbi, inode->i_nid[3], INDIRECT, PRINT, min_segid, max_segid);
-	process_blk(sbi, inode->i_nid[4], DINDIRECT, PRINT, min_segid, max_segid);
-	printf("\n inode nr: %x, min_seg: %u, max_seg: %u", nid, *min_segid, *max_segid);
+	process_blk(sbi, inode->i_nid[0], DIRECT, &seq_count, &total_blks, &prev_nr);
+	process_blk(sbi, inode->i_nid[1], DIRECT, &seq_count, &total_blks, &prev_nr);
+	process_blk(sbi, inode->i_nid[2], INDIRECT, &seq_count, &total_blks, &prev_nr);
+	process_blk(sbi, inode->i_nid[3], INDIRECT, &seq_count, &total_blks, &prev_nr);
+	process_blk(sbi, inode->i_nid[4], DINDIRECT, &seq_count, &total_blks, &prev_nr);
+	printf("\n Layout score for nid: %d is %2.5f", nid, (float)((float) seq_count/ (float) total_blks));
 	printf("\n");
 }
 
@@ -404,7 +391,8 @@ static inline void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t b
 /* 
  * TODO: dentries can be inline as well
  */
-void process_all_dentries(struct f2fs_sb_info *sbi, struct f2fs_inode *inode)
+void process_all_dentries(struct f2fs_sb_info *sbi, struct f2fs_inode *inode,
+		int *seq_count, int *total_blks, block_t *prev_nr)
 {
 	block_t d_addr;
 	int i, ofs;
@@ -456,11 +444,11 @@ void process_all_dentries(struct f2fs_sb_info *sbi, struct f2fs_inode *inode)
 	}
 
 	/* The following function will call process_dentry */
-	process_blk(sbi, inode->i_nid[0], DIRECT, F2FS_FT_DIR, NULL, NULL);
-	process_blk(sbi, inode->i_nid[1], DIRECT, F2FS_FT_DIR, NULL, NULL);
-	process_blk(sbi, inode->i_nid[2], INDIRECT, F2FS_FT_DIR, NULL, NULL);
-	process_blk(sbi, inode->i_nid[3], INDIRECT, F2FS_FT_DIR, NULL, NULL);
-	process_blk(sbi, inode->i_nid[4], DINDIRECT, F2FS_FT_DIR, NULL, NULL);
+	process_blk(sbi, inode->i_nid[0], DIRECT, seq_count, total_blks, prev_nr);
+	process_blk(sbi, inode->i_nid[1], DIRECT, seq_count, total_blks, prev_nr); 
+	process_blk(sbi, inode->i_nid[2], INDIRECT, seq_count, total_blks, prev_nr); 
+	process_blk(sbi, inode->i_nid[3], INDIRECT, seq_count, total_blks, prev_nr); 
+	process_blk(sbi, inode->i_nid[4], DINDIRECT, seq_count, total_blks, prev_nr); 
 }
 
 #define BITS_IN_BYTE 8
@@ -528,14 +516,8 @@ static void process_inode_num(struct f2fs_sb_info *sbi, nid_t nid,
 		int ftype)
 {
 	struct f2fs_inode *inode = read_inode(sbi, nid);
-	uint min_segid, max_segid;
-	min_segid = INT_MAX;
-	max_segid = 0;
-	uint nr_segs = sbi->total_sections * sbi->segs_per_sec;
 
-	memset(segbitmap, 0, sizeof(nr_segs/BITS_IN_BYTE));
-	process_inode_info(sbi, nid, inode, &min_segid, &max_segid);
-	process_bitmap(sbi);
+	process_inode_info(sbi, nid, inode);
 	
 	if (ftype == F2FS_FT_DIR) {
 		printf("\n Processing directory!");
@@ -550,10 +532,6 @@ static void process_root_inode(struct f2fs_sb_info *sbi)
 {
 
 	nid_t root_nid;
-	uint total_segs = sbi->total_sections * sbi->segs_per_sec;
-
-	segbitmap = calloc(total_segs/8, 1);
-	ASSERT(segbitmap != NULL);
 
 	root_nid = sbi->root_ino_num;
 	process_inode_num(sbi, root_nid, F2FS_FT_DIR);
@@ -602,7 +580,6 @@ int main(int argc, char **argv)
 		}
 		goto out_err;
 	}
-
 
 	process_root_inode(sbi);
 
