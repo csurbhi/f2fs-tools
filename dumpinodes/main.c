@@ -42,8 +42,9 @@ void get_nat_entry(struct f2fs_sb_info *sbi, nid_t nid,
 static char * segbitmap;
 
 static void process_inode_num(struct f2fs_sb_info *sbi, nid_t nid,
-                int ftype);
-static void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t blkaddr, u8 is_enc);
+                int ftype, float *layout_score, int * total_files);
+static void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t blkaddr, u8 is_enc,
+		float* layout_score, int * total_files);
 
 
 void get_node_info_nat(struct f2fs_sb_info *sbi, nid_t nid, struct node_info *ni)
@@ -86,7 +87,8 @@ void set_blknr(block_t blknr)
  * data
  */
 void process_direct_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, u8 action,
-		int *seq_count, int *total_blks, block_t *prev_nr)
+		int *seq_count, int *total_blks, block_t *prev_nr, float *layout_score,
+		int *total_files)
 {
 	int idx;
 	block_t blkaddr;
@@ -97,20 +99,21 @@ void process_direct_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, u8 
 			continue;
 		if (LAYOUT_SCORE == action) {
 			if (*prev_nr + 1 == blkaddr)
-				*seq_count++;
-			*total_blks++;
+				(*seq_count)++;
+			(*total_blks)++;
 			*prev_nr = blkaddr;
 		} else { 
 			ASSERT(DENTRY_PROCESS == action);
 			/* TODO: assert that the inode is a DIR */
-			process_dentries_in_block(sbi, blkaddr, file_is_encrypt(&node->i));
+			process_dentries_in_block(sbi, blkaddr, file_is_encrypt(&node->i), layout_score, total_files);
 		}
 	}
 	printf("\n");
 }
 
 void process_indirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, int action,
-		int *seq_count, int *total_blks, block_t *prev_nr)
+		int *seq_count, int *total_blks, block_t *prev_nr, float *layout_score,
+		int *total_files)
 {
 	int idx, ret;
 	nid_t nid;
@@ -127,13 +130,14 @@ void process_indirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, i
 		get_node_info_nat(sbi, nid, &ni);
 		ret = dev_read_block(dnode, ni.blk_addr);
 		ASSERT(ret >= 0);
-		process_direct_blocks(sbi, dnode, action, seq_count, total_blks, prev_nr);
+		process_direct_blocks(sbi, dnode, action, seq_count, total_blks, prev_nr, layout_score, total_files);
 	}
 	free(dnode);
 }
 
 void process_dindirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *dindnode, int action,
-		int *seq_count, int *total_blks, block_t *prev_nr)
+		int *seq_count, int *total_blks, block_t *prev_nr, float * layout_score,
+		int *total_files)
 {
 	int idx, ret;
 	nid_t nid;
@@ -150,7 +154,8 @@ void process_dindirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *dindno
 		get_node_info_nat(sbi, nid, &ni);
 		ret = dev_read_block(indnode, ni.blk_addr);
 		ASSERT(ret >= 0);
-		process_indirect_blocks(sbi, indnode, action, seq_count, total_blks, prev_nr);
+		process_indirect_blocks(sbi, indnode, action, seq_count, total_blks, prev_nr, layout_score,
+				total_files);
 	}
 	free(indnode);
 }
@@ -163,7 +168,8 @@ enum block_type {
 
 
 void process_blk(struct f2fs_sb_info *sbi, nid_t nid, int level, u8 action,
-		int *seq_count, int *total_blks, block_t *prev_nr)
+		int *seq_count, int *total_blks, block_t *prev_nr,
+		float *layout_score, int *total_files)
 {
 	struct f2fs_node *node;
 	struct node_info ni;
@@ -179,13 +185,13 @@ void process_blk(struct f2fs_sb_info *sbi, nid_t nid, int level, u8 action,
 	ASSERT(ret >= 0);
 	switch(level) {
 		case DIRECT:
-			process_direct_blocks(sbi, node, action, seq_count, total_blks, prev_nr);
+			process_direct_blocks(sbi, node, action, seq_count, total_blks, prev_nr, layout_score, total_files);
 			break;
 		case INDIRECT:
-			process_indirect_blocks(sbi, node, action, seq_count, total_blks, prev_nr);
+			process_indirect_blocks(sbi, node, action, seq_count, total_blks, prev_nr, layout_score, total_files);
 			break;
 		case DINDIRECT:
-			process_dindirect_blocks(sbi, node, action, seq_count, total_blks, prev_nr);
+			process_dindirect_blocks(sbi, node, action, seq_count, total_blks, prev_nr, layout_score, total_files);
 			break;
 		default:
 			ASSERT(1);
@@ -278,13 +284,12 @@ struct f2fs_inode * read_inode(struct f2fs_sb_info *sbi, nid_t nid)
 }
 
 
-void process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode *inode)
+float process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode *inode)
 {
 	unsigned int i = 0;
 	block_t blknr, prevnr;
 	int total_blks = 0;
 	int seq_count = 0;
-	block_t prev_nr = 0;
 
 	print_extra_inode_info(inode, 1);
 
@@ -292,11 +297,10 @@ void process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode *
 	 * blocks. We are not processing any directory entries
 	 * in this path. Hence we just calculate the layout score
 	 */
-	if ((inode->i_inline && F2FS_INLINE_DATA) || 
-			(inode->i_inline && F2FS_INLINE_DENTRY)) {
+	if ((inode->i_inline & F2FS_INLINE_DATA) || 
+			(inode->i_inline & F2FS_INLINE_DENTRY)) {
 		printf("\n Inline data, Layout score for nid: %d is 1.0 \n\n", nid);
-		ASSERT(1);
-		return;
+		return (1.0);
 	}
 
 	prevnr = le32_to_cpu(inode->i_addr[0]);
@@ -306,27 +310,29 @@ void process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode *
 		blknr = le32_to_cpu(inode->i_addr[i]);
 		if (blknr == 0)
 			continue;
-		DISP_u32(inode, i_addr[i]);	/* Pointers to data blocks */
-		if (prevnr+1 == blknr)
+		//DISP_u32(inode, i_addr[i]);	/* Pointers to data blocks */
+		DBG(2, "\n prevnr: %d blknr: %d", prevnr, blknr);
+		if ((prevnr+1) == blknr)
 			seq_count++;
-		prev_nr = blknr;
+		prevnr = blknr;
 		total_blks++;
 	}
 
-	process_blk(sbi, inode->i_nid[0], DIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prev_nr);
-	process_blk(sbi, inode->i_nid[1], DIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prev_nr);
-	process_blk(sbi, inode->i_nid[2], INDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prev_nr);
-	process_blk(sbi, inode->i_nid[3], INDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prev_nr);
-	process_blk(sbi, inode->i_nid[4], DINDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prev_nr);
+	process_blk(sbi, inode->i_nid[0], DIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
+	process_blk(sbi, inode->i_nid[1], DIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
+	process_blk(sbi, inode->i_nid[2], INDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
+	process_blk(sbi, inode->i_nid[3], INDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
+	process_blk(sbi, inode->i_nid[4], DINDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
 	if (total_blks == 1)
 		seq_count = 1;
 	printf("\n Layout score for nid: %d is %2.5f, seq_count: %d, total_blks: %d ", nid, (float)((float) seq_count/ (float) total_blks), seq_count, total_blks);
 	printf("\n");
+	return (float)((float) seq_count/ (float) total_blks);
 }
 
 void process_dentries(struct f2fs_sb_info * sbi, u8 *bitmap, __u8 (*filenames)[F2FS_SLOT_LEN],
 			struct f2fs_dir_entry *dentry, u8 is_enc,
-			int max)
+			int max, float *layout_score, int * total_files)
 {
 	int i;
 	u16 name_len;
@@ -358,14 +364,15 @@ void process_dentries(struct f2fs_sb_info * sbi, u8 *bitmap, __u8 (*filenames)[F
 		printf("\n <3 nid: %d ", nid);
 		printf("\n");
 		nid = le32_to_cpu(dentry[i].ino);
-		process_inode_num(sbi, nid, ftype);
+		process_inode_num(sbi, nid, ftype, layout_score, total_files);
 	}
 }
 
 /* 
  * TODO: You do not want to process the dentries belonging to . and ..
  */
-static inline void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t blkaddr, u8 is_enc)
+static inline void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t blkaddr, u8 is_enc, 
+		float *layout_score, int * total_files)
 {
 	struct f2fs_dentry_block *de_blk;
 	int ret;
@@ -376,7 +383,8 @@ static inline void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t b
 	ASSERT(ret >= 0);
 
 	process_dentries(sbi, de_blk->dentry_bitmap, de_blk->filename,
-				de_blk->dentry, is_enc, NR_DENTRY_IN_BLOCK);
+				de_blk->dentry, is_enc, NR_DENTRY_IN_BLOCK,
+				layout_score, total_files);
 }
 
 #define MAX_INLINE_DATA_I(inode) (sizeof(__le32) *                         \
@@ -399,7 +407,7 @@ static inline void process_dentries_in_block(struct f2fs_sb_info *sbi, block_t b
 /* 
  * TODO: dentries can be inline as well
  */
-void process_all_dentries(struct f2fs_sb_info *sbi, struct f2fs_inode *inode)
+void process_all_dentries(struct f2fs_sb_info *sbi, struct f2fs_inode *inode, float * layout_score, int *total_files)
 {
 	block_t d_addr;
 	int i, ofs;
@@ -427,14 +435,14 @@ void process_all_dentries(struct f2fs_sb_info *sbi, struct f2fs_inode *inode)
 		printf("\n ");
 		d.nr_bitmap = bitmap_size;
 		d.bitmap = (u8 *)inline_dentry;
-		printf("\n bitmap_size: %d, reserved_size: %d \n", bitmap_size, reserved_size);
-		printf("\n inline_dentry: %x", inline_dentry);
+		DBG(3, "\n bitmap_size: %d, reserved_size: %d \n", bitmap_size, reserved_size);
+		DBG(3, "\n inline_dentry: %x", (unsigned int) inline_dentry);
 		d.dentry = (struct f2fs_dir_entry *)
                                 ((char *)inline_dentry + bitmap_size + reserved_size);
 		d.filename = (__u8 (*)[F2FS_SLOT_LEN])((char *) inline_dentry +
                                 bitmap_size + reserved_size +
                                 SIZE_OF_DIR_ENTRY * entry_cnt);
-		process_dentries(sbi, d.bitmap, d.filename, d.dentry, file_is_encrypt(inode), d.max);
+		process_dentries(sbi, d.bitmap, d.filename, d.dentry, file_is_encrypt(inode), d.max, layout_score, total_files);
 		return;
 	}
 	DBG(2, "\n Directory is not inlined ");
@@ -447,15 +455,15 @@ void process_all_dentries(struct f2fs_sb_info *sbi, struct f2fs_inode *inode)
 			continue;
 		DBG(3, " \n %d %u - will process dentries here", i , d_addr);
 
-		process_dentries_in_block(sbi, d_addr, file_is_encrypt(inode));
+		process_dentries_in_block(sbi, d_addr, file_is_encrypt(inode), layout_score, total_files);
 	}
 
 	/* The following function will call process_dentry */
-	process_blk(sbi, inode->i_nid[0], DIRECT, DENTRY_PROCESS, NULL, NULL, NULL);
-	process_blk(sbi, inode->i_nid[1], DIRECT, DENTRY_PROCESS, NULL, NULL, NULL);
-	process_blk(sbi, inode->i_nid[2], INDIRECT, DENTRY_PROCESS, NULL, NULL, NULL);
-	process_blk(sbi, inode->i_nid[3], INDIRECT, DENTRY_PROCESS, NULL, NULL, NULL);
-	process_blk(sbi, inode->i_nid[4], DINDIRECT, DENTRY_PROCESS, NULL, NULL, NULL);
+	process_blk(sbi, inode->i_nid[0], DIRECT, DENTRY_PROCESS, NULL, NULL, NULL, layout_score, total_files);
+	process_blk(sbi, inode->i_nid[1], DIRECT, DENTRY_PROCESS, NULL, NULL, NULL, layout_score, total_files);
+	process_blk(sbi, inode->i_nid[2], INDIRECT, DENTRY_PROCESS, NULL, NULL, NULL, layout_score, total_files);
+	process_blk(sbi, inode->i_nid[3], INDIRECT, DENTRY_PROCESS, NULL, NULL, NULL, layout_score, total_files);
+	process_blk(sbi, inode->i_nid[4], DINDIRECT, DENTRY_PROCESS, NULL, NULL, NULL, layout_score, total_files);
 }
 
 #define BITS_IN_BYTE 8
@@ -520,17 +528,21 @@ static inline struct f2fs_node * containerof(struct f2fs_inode * inode)
  * b) If this is a directory inode then process all the dentries
  */
 static void process_inode_num(struct f2fs_sb_info *sbi, nid_t nid, 
-		int ftype)
+		int ftype, float *layout_score, int * total_files)
 {
 	struct f2fs_inode *inode = read_inode(sbi, nid);
+	float inode_score;
 
 	/* Calculate the layout score of this inode */
-	process_inode_info(sbi, nid, inode);
+	inode_score = process_inode_info(sbi, nid, inode);
+
+	*layout_score += inode_score;
+	(*total_files)++;
 	
 	if (ftype == F2FS_FT_DIR) {
 		DBG(2, "\n Processing directory!");
 		/* do a DFS of all the dentries in this inode */
-		process_all_dentries(sbi, inode);
+		process_all_dentries(sbi, inode, layout_score, total_files);
 	}
 
 	free(containerof(inode));
@@ -541,9 +553,13 @@ static void process_root_inode(struct f2fs_sb_info *sbi)
 {
 
 	nid_t root_nid;
+	int total_files=0;
+	float layout_score=0.0;
 
 	root_nid = sbi->root_ino_num;
-	process_inode_num(sbi, root_nid, F2FS_FT_DIR);
+	process_inode_num(sbi, root_nid, F2FS_FT_DIR, &layout_score, &total_files);
+
+	printf("\n Average layout score: %2.5f, total_files: %d total_layout_score: %f", (float) (layout_score / (float) total_files), total_files, layout_score); 
 }
 
 int main(int argc, char **argv)
