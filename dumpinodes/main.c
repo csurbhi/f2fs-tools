@@ -277,6 +277,7 @@ struct f2fs_inode * read_inode(struct f2fs_sb_info *sbi, nid_t nid)
 	ret = dev_read_block(node, ni.blk_addr);
 	ASSERT(ret >= 0);
 	ASSERT(node->footer.nid == node->footer.ino);
+	printf("\n Footer.nid: %lu, nid:%lu\n", node->footer.nid, nid);
 	ASSERT(node->footer.nid == nid);
 
 	inode = &node->i;
@@ -289,7 +290,7 @@ float process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode 
 	unsigned int i = 0;
 	block_t blknr, prevnr;
 	int total_blks = 0;
-	int seq_count = 0;
+	int seq_count = 1;
 
 	print_extra_inode_info(inode, 1);
 
@@ -323,8 +324,6 @@ float process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode 
 	process_blk(sbi, inode->i_nid[2], INDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
 	process_blk(sbi, inode->i_nid[3], INDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
 	process_blk(sbi, inode->i_nid[4], DINDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
-	if (total_blks == 1)
-		seq_count = 1;
 	printf("\n Layout score for nid: %d is %2.5f, seq_count: %d, total_blks: %d ", nid, (float)((float) seq_count/ (float) total_blks), seq_count, total_blks);
 	printf("\n");
 	return (float)((float) seq_count/ (float) total_blks);
@@ -364,6 +363,7 @@ void process_dentries(struct f2fs_sb_info * sbi, u8 *bitmap, __u8 (*filenames)[F
 		printf("\n <3 nid: %d ", nid);
 		printf("\n");
 		nid = le32_to_cpu(dentry[i].ino);
+		printf("\n name_len: %d name: %s nid: %lu", name_len, name, nid);
 		process_inode_num(sbi, nid, ftype, layout_score, total_files);
 	}
 }
@@ -530,9 +530,10 @@ static inline struct f2fs_node * containerof(struct f2fs_inode * inode)
 static void process_inode_num(struct f2fs_sb_info *sbi, nid_t nid, 
 		int ftype, float *layout_score, int * total_files)
 {
-	struct f2fs_inode *inode = read_inode(sbi, nid);
+	struct f2fs_inode *inode;
 	float inode_score;
 
+	inode = read_inode(sbi, nid);
 	/* Calculate the layout score of this inode */
 	inode_score = process_inode_info(sbi, nid, inode);
 

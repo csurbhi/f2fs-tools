@@ -792,7 +792,7 @@ fsck_again:
 		}
 		goto out_err;
 	}
-	MSG(0, "\n about to do fsck ");
+	MSG(0, "\n about to do fsck \n");
 	return 0;
 	switch (c.func) {
 	case FSCK:

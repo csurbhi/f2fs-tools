@@ -786,8 +786,14 @@ static int f2fs_write_check_point_pack(void)
 	set_cp(cp_pack_total_block_count, 9 + get_sb(cp_payload));
 	flags = CP_UMOUNT_FLAG | CP_COMPACT_SUM_FLAG;
 	if (get_cp(cp_pack_total_block_count) <=
-			(1 << get_sb(log_blocks_per_seg)) - nat_bits_blocks)
+			(1 << get_sb(log_blocks_per_seg)) - nat_bits_blocks) {
 		flags |= CP_NAT_BITS_FLAG;
+		MSG(0, "\n **** CP_NAT_BITS_FLAG SET!!! ");
+		printf("\n <3 CP_NAT_BITS_FLAG set !!!!!!!! ");
+	} else {
+		MSG(0, "\n **** CP_NAT_BITS_FLAG not SET!!! ");
+		printf("\n :-( CP_NAT_BITS_FLAG not set !!!!!!!! ");
+	}
 
 	if (c.trimmed)
 		flags |= CP_TRIMMED_FLAG;
@@ -1147,6 +1153,7 @@ static int f2fs_write_check_point_pack(void)
 
 		*(__le64 *)nat_bits = get_cp_crc(cp);
 		empty_nat_bits = nat_bits + 8 + nat_bits_bytes;
+		printf("\n ~~~~~~~~~~~~~~~~~~ nat_bits_bytes: %d", nat_bits_bytes);
 		memset(empty_nat_bits, 0xff, nat_bits_bytes);
 		test_and_clear_bit_le(0, empty_nat_bits);
 
@@ -1154,8 +1161,9 @@ static int f2fs_write_check_point_pack(void)
 		cp_seg_blk = get_sb(segment0_blkaddr) + (1 <<
 				get_sb(log_blocks_per_seg)) - nat_bits_blocks;
 
-		DBG(1, "\tWriting NAT bits pages, at offset 0x%08"PRIx64"\n",
+		MSG(0, "\tWriting NAT bits pages, at offset 0x%08"PRIx64"\n",
 					cp_seg_blk);
+		printf("\n <3 writing nat bits!! , nat_bits_blocks: %d\n", nat_bits_blocks);
 
 		for (i = 0; i < nat_bits_blocks; i++) {
 			if (dev_write_block(nat_bits + i *

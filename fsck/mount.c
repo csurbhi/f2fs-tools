@@ -1248,11 +1248,20 @@ static int check_nat_bits(struct f2fs_sb_info *sbi,
 			ASSERT_MSG("\tError: read NAT bits to disk!!!\n");
 	}
 
-	if (*(__le64 *)nat_bits != get_cp_crc(cp) || nats_in_cursum(journal)) {
+	if ((*(__le64 *)nat_bits != get_cp_crc(cp)) && nats_in_cursum(journal)) {
 		/*
 		 * if there is a journal, f2fs was not shutdown cleanly. Let's
 		 * flush them with nat_bits.
 		 */
+		printf("\n CRC error!!!!!!!!!!!!!!!");
+		if (*(__le64 *)nat_bits != get_cp_crc(cp)) {
+			printf("\n nat_bits != get_cp_crc(cp)");
+			printf("\n nat_bits: %d", *(__le64 *)nat_bits);
+			printf("\n get_cp_crc(cp): %d", get_cp_crc(cp));
+		}
+		else {
+			printf("\n nats_in_cursum(journal): %d ", le16_to_cpu(journal->n_nats));
+		}
 		if (c.fix_on)
 			err = -1;
 		/* Otherwise, kernel will disable nat_bits */
@@ -1271,11 +1280,14 @@ static int check_nat_bits(struct f2fs_sb_info *sbi,
 		}
 		if (valid == 0) {
 			if (!empty || full) {
+				MSG(0, "\n valid == 0, but empty: %d, full: %d", empty, full);
 				err = -1;
 				goto out;
 			}
 		} else if (valid == NAT_ENTRY_PER_BLOCK) {
 			if (empty || !full) {
+				MSG(0, "\n NAT_ENTRY_PER_BLOCK: %d", NAT_ENTRY_PER_BLOCK);
+				MSG(0, "\n valid == NAT_ENTRY_PER_BLOCK, empty: %d, full: %d nat_block: %d nat_blocks: %d", empty, full, i, nat_blocks);
 				err = -1;
 				goto out;
 			}
@@ -1289,10 +1301,10 @@ static int check_nat_bits(struct f2fs_sb_info *sbi,
 out:
 	free(nat_bits);
 	if (!err) {
-		MSG(0, "Info: Checked valid nat_bits in checkpoint\n");
+		MSG(0, "\n Info: Checked valid nat_bits in checkpoint\n");
 	} else {
 		c.bug_nat_bits = 1;
-		MSG(0, "Info: Corrupted valid nat_bits in checkpoint\n");
+		MSG(0, "\n Info: Corrupted valid nat_bits in checkpoint\n");
 	}
 	return err;
 }
