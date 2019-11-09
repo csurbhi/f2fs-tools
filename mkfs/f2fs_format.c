@@ -1379,7 +1379,7 @@ static int f2fs_write_root_inode(void)
 	main_area_node_seg_blk_offset += c.cur_seg[CURSEG_HOT_NODE] *
 					c.blks_per_seg;
 
-	DBG(1, "\tWriting root inode (hot node), %x %x %x at offset 0x%08"PRIu64"\n",
+	MSG(1, "\tWriting root inode (hot node), %x %x %x at offset 0x%08"PRIu64"\n",
 			get_sb(main_blkaddr),
 			c.cur_seg[CURSEG_HOT_NODE],
 			c.blks_per_seg, main_area_node_seg_blk_offset);
