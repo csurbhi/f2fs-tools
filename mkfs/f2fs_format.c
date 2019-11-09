@@ -335,7 +335,7 @@ static int f2fs_prepare_super_block(void)
 		max_nat_bitmap_size = 0;
 	}
 
-		MSG(0,"\n blocks_for_nat: %lu, nat_segments: %lu", blocks_for_nat, get_sb(segment_count_nat));
+	MSG(0,"\n blocks_for_nat: %lu, nat_segments: %lu", blocks_for_nat, get_sb(segment_count_nat));
 		/*
 	 * The number of node segments should not be exceeded a "Threshold".
 	 * This number resizes NAT bitmap area in a CP page.
@@ -690,7 +690,7 @@ static int f2fs_write_check_point_pack(void)
 	struct f2fs_journal *journal;
 	u_int32_t blk_size_bytes;
 	u_int32_t nat_bits_bytes, nat_bits_blocks;
-	unsigned char *nat_bits = NULL, *empty_nat_bits;
+	unsigned char *nat_bits = NULL, *empty_nat_bits, *full_nat_bits;
 	u_int64_t cp_seg_blk = 0;
 	u_int32_t crc = 0, flags;
 	unsigned int i;
@@ -788,10 +788,8 @@ static int f2fs_write_check_point_pack(void)
 	if (get_cp(cp_pack_total_block_count) <=
 			(1 << get_sb(log_blocks_per_seg)) - nat_bits_blocks) {
 		flags |= CP_NAT_BITS_FLAG;
-		MSG(0, "\n **** CP_NAT_BITS_FLAG SET!!! ");
 		printf("\n <3 CP_NAT_BITS_FLAG set !!!!!!!! ");
 	} else {
-		MSG(0, "\n **** CP_NAT_BITS_FLAG not SET!!! ");
 		printf("\n :-( CP_NAT_BITS_FLAG not set !!!!!!!! ");
 	}
 
@@ -817,8 +815,8 @@ static int f2fs_write_check_point_pack(void)
 	else
 		set_cp(checksum_offset, CP_CHKSUM_OFFSET);
 
-	MSG(0, "\n Size of f2fs_checksum: %u", sizeof(struct f2fs_checkpoint));
-	MSG(0, "\n checksum_offset: %d \n", CP_CHKSUM_OFFSET);
+	MSG(1, "\n Size of f2fs_checksum: %u", sizeof(struct f2fs_checkpoint));
+	MSG(1, "\n checksum_offset: %d \n", CP_CHKSUM_OFFSET);
 
 	crc = f2fs_checkpoint_chksum(cp);
 	*((__le32 *)((unsigned char *)cp + get_cp(checksum_offset))) =
@@ -910,7 +908,7 @@ static int f2fs_write_check_point_pack(void)
 
 	memset(sum, 0, sizeof(struct f2fs_summary_block));
 	/* inode sit for root */
-	journal->n_sits = cpu_to_le16(6); /* adding 6 for the GC cur segs */
+	journal->n_sits = cpu_to_le16(6); /* there is space only for 6 */
 	MSG(0,"\n journal->n_sits: %d", journal->n_sits);
 	journal->sit_j.entries[0].segno = cp->cur_node_segno[0];
 	journal->sit_j.entries[0].se.vblocks =
@@ -997,7 +995,6 @@ static int f2fs_write_check_point_pack(void)
 	memset(&se, 0, sizeof(struct f2fs_sit_entry));
 	segno = cp->cur_gc_data_segno[0];
 	se.vblocks = cpu_to_le16((CURSEG_HOT_DATA << 10));
-	MSG(0,"\n$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
 	write_sit_entry(segno, &se);
 
 	segno = cp->cur_gc_data_segno[1];
@@ -1148,11 +1145,19 @@ static int f2fs_write_check_point_pack(void)
 	}
 
 	/* write NAT bits, if possible */
+	/* NAT bits are as follows:
+	 * CRC, followed by nat_bit_bytes of full bits
+	 * followed by nat_bit_bytes of empty bits
+	 * full bits are set to 0 and empty bits are set to 0xff
+	 */
 	if (flags & CP_NAT_BITS_FLAG) {
 		uint32_t i;
 
 		*(__le64 *)nat_bits = get_cp_crc(cp);
-		empty_nat_bits = nat_bits + 8 + nat_bits_bytes;
+		full_nat_bits = nat_bits + 8;
+		memset(full_nat_bits, 0x0, nat_bits_bytes);
+		empty_nat_bits = full_nat_bits + nat_bits_bytes;
+		//empty_nat_bits = nat_bits + 8 + nat_bits_bytes;
 		printf("\n ~~~~~~~~~~~~~~~~~~ nat_bits_bytes: %d", nat_bits_bytes);
 		memset(empty_nat_bits, 0xff, nat_bits_bytes);
 		test_and_clear_bit_le(0, empty_nat_bits);
@@ -1163,7 +1168,7 @@ static int f2fs_write_check_point_pack(void)
 
 		MSG(0, "\tWriting NAT bits pages, at offset 0x%08"PRIx64"\n",
 					cp_seg_blk);
-		printf("\n <3 writing nat bits!! , nat_bits_blocks: %d\n", nat_bits_blocks);
+		printf("\n <3 writing nat bits!! , nat_bits_blocks: %d cp_seg_blk: %d \n", nat_bits_blocks, cp_seg_blk);
 
 		for (i = 0; i < nat_bits_blocks; i++) {
 			if (dev_write_block(nat_bits + i *

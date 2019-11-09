@@ -1224,7 +1224,8 @@ static int check_nat_bits(struct f2fs_sb_info *sbi,
 	struct f2fs_nm_info *nm_i = NM_I(sbi);
 	u_int32_t nat_blocks = get_sb(segment_count_nat) <<
 				(get_sb(log_blocks_per_seg) - 1);
-	u_int32_t nat_bits_bytes = nat_blocks >> 3;
+	//u_int32_t nat_bits_bytes = nat_blocks >> 3;
+	u_int32_t nat_bits_bytes = get_sb(segment_count_nat) << 5;
 	u_int32_t nat_bits_blocks = F2FS_BYTES_TO_BLK((nat_bits_bytes << 1) +
 					8 + F2FS_BLKSIZE - 1);
 	unsigned char *nat_bits, *full_nat_bits, *empty_nat_bits;
@@ -1240,9 +1241,20 @@ static int check_nat_bits(struct f2fs_sb_info *sbi,
 	full_nat_bits = nat_bits + 8;
 	empty_nat_bits = full_nat_bits + nat_bits_bytes;
 
+	printf("\n segment0_blkaddr: %lu", get_sb(segment0_blkaddr));
+	printf("\n (sbi->cur_cp << get_sb(log_blocks_per_seg)): %d ", sbi->cur_cp << get_sb(log_blocks_per_seg));
+	printf("\n nat_bits_blocks: %d", nat_bits_blocks);
+
+	blkaddr = get_sb(segment0_blkaddr);
+	blkaddr += 1 << get_sb(log_blocks_per_seg);
+	blkaddr -= nat_bits_blocks;
+	printf("\n blkaddr: %d", blkaddr);
+	/*
 	blkaddr = get_sb(segment0_blkaddr) + (sbi->cur_cp <<
 				get_sb(log_blocks_per_seg)) - nat_bits_blocks;
 
+	printf("\n blkaddr: %d", blkaddr);
+	*/
 	for (i = 0; i < nat_bits_blocks; i++) {
 		if (dev_read_block(nat_bits + i * F2FS_BLKSIZE, blkaddr + i))
 			ASSERT_MSG("\tError: read NAT bits to disk!!!\n");
@@ -1268,7 +1280,9 @@ static int check_nat_bits(struct f2fs_sb_info *sbi,
 		goto out;
 	}
 
-	for (i = 0; i < nat_blocks; i++) {
+	printf("\n nat_blocks: %d \n", nat_blocks);
+
+	for (i = 0; i < nat_bits_blocks; i++) {
 		u_int32_t start_nid = i * NAT_ENTRY_PER_BLOCK;
 		u_int32_t valid = 0;
 		int empty = test_bit_le(i, empty_nat_bits);
@@ -1301,7 +1315,8 @@ static int check_nat_bits(struct f2fs_sb_info *sbi,
 out:
 	free(nat_bits);
 	if (!err) {
-		MSG(0, "\n Info: Checked valid nat_bits in checkpoint\n");
+		MSG(1, "\n Info: Checked valid nat_bits in checkpoint\n");
+		printf("\n No error in NAT bits ");
 	} else {
 		c.bug_nat_bits = 1;
 		MSG(0, "\n Info: Corrupted valid nat_bits in checkpoint\n");
