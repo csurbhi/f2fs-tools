@@ -1319,6 +1319,7 @@ static inline double get_best_overprovision(struct f2fs_super_block *sb)
 			max_ovp = candidate;
 		}
 	}
+	printf("\n ovp: %f max_ovp %f", ovp, max_ovp);
 	return max_ovp;
 }
 

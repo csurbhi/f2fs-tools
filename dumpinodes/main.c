@@ -92,12 +92,13 @@ void process_direct_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, u8 
 {
 	int idx;
 	block_t blkaddr;
-	printf("\t");
+	//printf("\t");
 	for (idx = 0; idx < ADDRS_PER_BLOCK; idx++) {
 		blkaddr = le32_to_cpu(node->dn.addr[idx]);
 		if (blkaddr == 0)
 			continue;
 		if (LAYOUT_SCORE == action) {
+			printf("\n %d block:%lu segno:%lu ", total_blks, blkaddr, GET_SEGNO(sbi, blkaddr));
 			if (*prev_nr + 1 == blkaddr)
 				(*seq_count)++;
 			(*total_blks)++;
@@ -108,7 +109,7 @@ void process_direct_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, u8 
 			process_dentries_in_block(sbi, blkaddr, file_is_encrypt(&node->i), layout_score, total_files);
 		}
 	}
-	printf("\n");
+	//printf("\n");
 }
 
 void process_indirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, int action,
@@ -127,7 +128,9 @@ void process_indirect_blocks(struct f2fs_sb_info *sbi, struct f2fs_node *node, i
 		nid = le32_to_cpu(node->in.nid[idx]);
 		if (nid == 0)
 			continue;
+		//printf("\n nid: %u idx: %d \n", nid, idx);
 		get_node_info_nat(sbi, nid, &ni);
+		//printf("\n process_indirect_blocks(): reading nid: %d, ni.blk_addr: %d", nid, ni.blk_addr);
 		ret = dev_read_block(dnode, ni.blk_addr);
 		ASSERT(ret >= 0);
 		process_direct_blocks(sbi, dnode, action, seq_count, total_blks, prev_nr, layout_score, total_files);
@@ -274,6 +277,9 @@ struct f2fs_inode * read_inode(struct f2fs_sb_info *sbi, nid_t nid)
 	ASSERT(node != NULL);
 
 	get_node_info_nat(sbi, nid, &ni);
+	//ASSERT(ni.blk_addr != 0);
+	if(ni.blk_addr == 0)
+		return NULL;
 	ret = dev_read_block(node, ni.blk_addr);
 	ASSERT(ret >= 0);
 	ASSERT(node->footer.nid == node->footer.ino);
@@ -291,8 +297,12 @@ float process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode 
 	block_t blknr, prevnr;
 	int total_blks = 0;
 	int seq_count = 1;
+	uint nrblks = inode->i_size / 4096;
+	uint blksconsumed = 0;
+	int segno = 0;
 
 	print_extra_inode_info(inode, 1);
+	printf("nr of blks: %u", nrblks);
 
 	/* If inline flag is set, the data spans only this one
 	 * blocks. We are not processing any directory entries
@@ -304,28 +314,53 @@ float process_inode_info(struct f2fs_sb_info *sbi, nid_t nid, struct f2fs_inode 
 		return (1.0);
 	}
 
+	printf("\n----------------------------------------------------------------\n");
 	prevnr = le32_to_cpu(inode->i_addr[0]);
-	if (prevnr != 0)
+	if (prevnr != 0) {
+		printf("\n nid:%d %d block:%lu segno:%lu ", nid, total_blks, prevnr, GET_SEGNO(sbi, prevnr));
 		total_blks++;
+	}
+	segno = (prevnr - sbi->raw_super->segment0_blkaddr) / 65536;
 	for (i = 1; i < ADDRS_PER_INODE(inode); i++) {
 		blknr = le32_to_cpu(inode->i_addr[i]);
 		if (blknr == 0)
 			continue;
+		printf("\n nid:%d %d block:%lu segno:%lu ", nid, total_blks, blknr, GET_SEGNO(sbi, blknr));
 		//DISP_u32(inode, i_addr[i]);	/* Pointers to data blocks */
-		DBG(2, "\n prevnr: %d blknr: %d", prevnr, blknr);
+		DBG(2, "\n direct blocks processing: i: %d prevnr: %d blknr: %d", i, prevnr, blknr);
 		if ((prevnr+1) == blknr)
 			seq_count++;
 		prevnr = blknr;
 		total_blks++;
 	}
+	blksconsumed = ADDRS_PER_INODE(inode);
+	if (nrblks < blksconsumed)
+		goto ret;
 
 	process_blk(sbi, inode->i_nid[0], DIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
+	blksconsumed += ADDRS_PER_BLOCK;
+	if (nrblks < blksconsumed)
+		goto ret;
+
 	process_blk(sbi, inode->i_nid[1], DIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
+	blksconsumed += ADDRS_PER_BLOCK;
+	if (nrblks < blksconsumed)
+		goto ret;
+
 	process_blk(sbi, inode->i_nid[2], INDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
+	blksconsumed += NIDS_PER_BLOCK * ADDRS_PER_BLOCK;
+	if (nrblks < blksconsumed)
+		goto ret;
+
 	process_blk(sbi, inode->i_nid[3], INDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
+	blksconsumed += NIDS_PER_BLOCK * ADDRS_PER_BLOCK;
+	if (nrblks < blksconsumed)
+		goto ret;
+
 	process_blk(sbi, inode->i_nid[4], DINDIRECT, LAYOUT_SCORE, &seq_count, &total_blks, &prevnr, NULL, NULL);
+ret:
 	printf("\n Layout score for nid: %d is %2.5f, seq_count: %d, total_blks: %d ", nid, (float)((float) seq_count/ (float) total_blks), seq_count, total_blks);
-	printf("\n");
+	printf("\n----------------------------------------------------------------\n");
 	return (float)((float) seq_count/ (float) total_blks);
 }
 
@@ -351,7 +386,7 @@ void process_dentries(struct f2fs_sb_info * sbi, u8 *bitmap, __u8 (*filenames)[F
 		name = calloc(name_len + 1, 1);
 		ASSERT(name);
 		memcpy(name, filenames[i], name_len);
-		printf("\t %s ", name); 
+		//printf("\t %s ", name); 
 		ftype = dentry[i].file_type;
 		if (ftype == F2FS_FT_DIR) {
 			if ((name[0] == '.' && name_len == 1) ||
@@ -360,7 +395,6 @@ void process_dentries(struct f2fs_sb_info * sbi, u8 *bitmap, __u8 (*filenames)[F
 				continue;
 			}
 		}
-		printf("\n <3 nid: %d ", nid);
 		printf("\n");
 		nid = le32_to_cpu(dentry[i].ino);
 		printf("\n name_len: %d name: %s nid: %lu", name_len, name, nid);
@@ -534,6 +568,10 @@ static void process_inode_num(struct f2fs_sb_info *sbi, nid_t nid,
 	float inode_score;
 
 	inode = read_inode(sbi, nid);
+	if (!inode) {
+		printf("\n Could not read inode: %d ", nid);
+		return;
+	}
 	/* Calculate the layout score of this inode */
 	inode_score = process_inode_info(sbi, nid, inode);
 
@@ -569,6 +607,7 @@ int main(int argc, char **argv)
 	int ret = 0;
 
 	f2fs_init_configuration();
+	c.dbg_lv = 1;
 
 	/* Get device */
 	if (argc < 2) {

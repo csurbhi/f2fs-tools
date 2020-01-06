@@ -1797,11 +1797,12 @@ void check_block_count(struct f2fs_sb_info *sbi,
 	for (i = 0; i < SIT_VBLOCK_MAP_SIZE; i++)
 		valid_blocks += get_bits_in_byte(raw_sit->valid_map[i]);
 
+	/*
 	if (valid_blocks) {
 		printf("\n raw_sit->valid_map:  %u", raw_sit->valid_map[0]);
 		printf("\n valid blocks: %u , segno: %u", valid_blocks, segno);
 		printf("\n");
-	}
+	}*/
 
 	if (GET_SIT_VBLOCKS(raw_sit) != valid_blocks)
 		printf("\n**** Wrong SIT valid blocks: segno=%u, %u vs. %u, raw_sit->valid_map: %c \n",
