@@ -1,0 +1,114 @@
+total 0
+0
+
+	F2FS-tools: mkfs.f2fs Ver: 1.12.0 (2019-11-08)
+
+Info: Disable heap-based policy
+Info: Debug level = 0
+Info: Trim is enabled
+
+ c.ndevs: 1Info: [/dev/sdb] Disk Model: HGST HSH721414AL
+Info: Host-managed zoned block device:
+      52156 zones, 524 randomly writeable zones
+      65536 blocks per zone
+Info: Segments per section = 128
+Info: Sections per zone = 1
+Info: sector size = 4096
+Info: total sectors = 3418095616 (13351936 MB)
+Info: zone aligned segment0 blkaddr: 65536
+
+ sit_blkaddr: 66560, cp_blkaddr: 65536 blks_per_seg: 512 segment_count_ckpt: 2
+ blocks_for_sit: 121379, sit_segments: 476
+ blocks_for_nat: 7511617, nat_segments: 14672
+ blocks_for_nat: 60416, nat_segments: 118
+ SSA blkaddr: 370688
+ SSA: blocks for SSA: 6675245, segment_count_for_ssa: 13038
+ get_sb(segment_count_ckpt): 2 
+ get_sb(segment_count_sit): 476
+ get_sb(segment_count_nat): 118
+ get_sb(segment_count_ssa): 13038
+ *** Total meta segments: 13634
+ main_blkaddr: 7077888
+ ovp: 665856.000000 max_ovp 0.620000
+ ****c.overprovision: 42314
+ ****c.reserved_segments: 42314
+ ***Info: c.cur_seg[CURSEG_HOT_NODE]: 0 
+
+ ***Info: c.cur_seg[CURSEG_WARM_NODE]: 128 
+
+ ***Info: c.cur_seg[CURSEG_COLD_NODE]: 256 
+
+ ***Info: c.cur_seg[CURSEG_HOT_DATA]: 384 
+
+ ***Info: c.cur_seg[CURSEG_WARM_DATA]: 3330944 
+
+ ***Info: c.cur_seg[CURSEG_COLD_DATA]: 1665408 
+
+ ***Info: c.gc_cur_seg[CURSEG_HOT_NODE]: 1665636 
+
+ ***Info: c.gc_cur_seg[CURSEG_WARM_NODE]: 1665764 
+
+ ***Info: c.gc_cur_seg[CURSEG_COLD_NODE]: 1665892 
+
+ ***Info: c.gc_cur_seg[CURSEG_HOT_DATA]: 1666020 
+
+ ***Info: c.gc_cur_seg[CURSEG_WARM_DATA]: 1666276 
+
+ ***Info: c.gc_cur_seg[CURSEG_COLD_DATA]: 1666148 
+Info: format version with
+  "Linux version 5.2.06+ (surbhi@curare) (gcc version 8.3.0 (Ubuntu 8.3.0-6ubuntu1)) #112 SMP Fri Dec 6 15:51:58 PST 2019"
+Info: [/dev/sdb] Discarding device
+Info: Discarded 13351936 MB
+
+ SIT seg: 272629760 blk addr: 66560
+ NAT seg: 1270874112 blk addr: 310272Info: Overprovision ratio = 0.620%
+Info: Overprovision segments = 83356 (GC reserved = 42314)
+
+ free_segment_count = 6662132
+ <3 CP_NAT_BITS_FLAG set !!!!!!!! 
+ checksum: 3832624712
+ Writing cp at blk: 65536 
+ writing cp at: 65536 
+ journal->n_nats: 1
+ journal->n_sits: 6
+ HOT NODE: 1 + c.quota_inum + c.lpf_inum: 1
+ journal->sit_j.entries[0].se.valid_map: 128
+ HOT DATA: SIT: 1 + c.quota_dnum + c.lpf_dnum: 1
+ journal->sit_j.entries[3].se.valid_map: 128
+
+ segno: 1666020
+ **************** SIT blk addr 66560
+ SIT seg blk addr for segno: 1666020 is 96851
+ segno: 1666020, offset is: 15
+
+ segno: 1666276
+ **************** SIT blk addr 66560
+ SIT seg blk addr for segno: 1666276 is 96855
+ segno: 1666276, offset is: 51
+
+ segno: 1666148
+ **************** SIT blk addr 66560
+ SIT seg blk addr for segno: 1666148 is 96853
+ segno: 1666148, offset is: 33
+
+ segno: 1665636
+ **************** SIT blk addr 66560
+ SIT seg blk addr for segno: 1665636 is 96844
+ segno: 1665636, offset is: 16
+
+ segno: 1665764
+ **************** SIT blk addr 66560
+ SIT seg blk addr for segno: 1665764 is 96846
+ segno: 1665764, offset is: 34
+
+ segno: 1665892
+ **************** SIT blk addr 66560
+ SIT seg blk addr for segno: 1665892 is 96848
+ segno: 1665892, offset is: 52
+
+ ~~~~~~~~~~~~~~~~~~ nat_bits_bytes: 3776	Writing NAT bits pages, at offset 0x000101fe
+
+ <3 writing nat bits!! , nat_bits_blocks: 2 cp_seg_blk: 66046 
+Info: format successful
+Jan  5 11:44:03 curare kernel: [175261.527194] 
+0

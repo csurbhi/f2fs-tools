@@ -1,0 +1,9 @@
+ name_len: 5 name: file1 nid: 4
+ Footer.nid: 4, nid:4
+ - File name         : file1
+ - File size         : 536,870,912 (bytes)
+nr of blks: 131072
+ nid:4 first_block:7274498 segno:0 
+ Layout score for nid: 4 is 0.00001, seq_count: 1, total_blks: 131072 
+ Average layout score: 0.50000, total_files: 2 total_layout_score: 1.000008
+Done.
