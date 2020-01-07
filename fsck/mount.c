@@ -629,6 +629,7 @@ int sanity_check_raw_super(struct f2fs_super_block *sb, enum SB_ADDR sb_addr)
 						F2FS_MAX_LOG_SECTOR_SIZE)
 		return -1;
 
+	printf("\n inside sanity_check_raw_super()");
 	/* check reserved ino info */
 	if (get_sb(node_ino) != 1 || get_sb(meta_ino) != 2 ||
 					get_sb(root_ino) != 3)
@@ -1764,7 +1765,7 @@ int get_sum_entry(struct f2fs_sb_info *sbi, u32 blk_addr,
 	return type;
 }
 
-static void get_nat_entry(struct f2fs_sb_info *sbi, nid_t nid,
+void get_nat_entry(struct f2fs_sb_info *sbi, nid_t nid,
 				struct f2fs_nat_entry *raw_nat)
 {
 	struct f2fs_nat_block *nat_block;
