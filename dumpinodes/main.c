@@ -645,6 +645,8 @@ int main(int argc, char **argv)
 		goto out_err;
 	}
 
+	printf("\n Mounted! ");
+
 	process_root_inode(sbi);
 
 	f2fs_do_umount(sbi);
