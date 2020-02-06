@@ -1,0 +1,1 @@
+grep "segno:" output  | tr -s " " | cut -d " " -f 4 | cut -d ":" -f 2 | sort | uniq
