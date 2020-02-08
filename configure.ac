@@ -207,6 +207,7 @@ AC_CONFIG_FILES([
 	lib/Makefile
 	mkfs/Makefile
 	fsck/Makefile
+	dumpinodes/Makefile
 	tools/Makefile
 	tools/sg_write_buffer/Makefile
 	tools/f2fs_io/Makefile
